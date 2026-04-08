@@ -12,7 +12,7 @@ const DEFAULTS = {
   brakeDecel: 480,     // px/s²
   maxSteering: 35,     // degrees
   steeringRate: 120,   // degrees/s — how fast the wheel turns
-  arrivalRadius: 12,   // px — "close enough" to target
+  arrivalRadius: 55,   // px — must be > min turning radius (wheelbase/tan(maxSteering) ≈ 46)
   skidThreshold: 150,  // px/s — speed above which arrival triggers a skid
   color: '#e63946',
 }
@@ -30,7 +30,7 @@ export class Car {
     this.width = cfg.width
     this.height = cfg.height
     this.wheelbase = cfg.wheelbase
-    this.maxSpeed = cfg.maxSpeed
+    this.maxSpeed = cfg.maxSpeed * (0.8 + Math.random() * 0.4)  // ±20% variation
     this.acceleration = cfg.acceleration
     this.brakeDecel = cfg.brakeDecel
     this.maxSteering = cfg.maxSteering * DEG
@@ -41,10 +41,15 @@ export class Car {
 
     this.target = null  // { x, y }
     this._skidding = false
+    this._cumulativeRotation = 0  // tracks total rotation for orbit detection
+    this._orbiting = false        // true when braking out of an orbit
+    this._avoidSpeedFactor = 1    // random speed tweak when avoiding
   }
 
   driveTo(x, y) {
     this.target = { x, y }
+    this._cumulativeRotation = 0
+    this._avoidSpeedFactor = 0.97 + Math.random() * 0.06  // 0.97–1.03
   }
 
   /**
@@ -79,6 +84,7 @@ export class Car {
     let steerX = toTargetX
     let steerY = toTargetY
 
+    let avoiding = false
     if (!shouldBrake) {
       const avoid = this._avoidanceForce(others)
       const avoidLen = Math.sqrt(avoid.x * avoid.x + avoid.y * avoid.y)
@@ -86,6 +92,7 @@ export class Car {
         // Blend: mostly target direction, plus lateral avoidance push
         steerX += avoid.x * 2.5
         steerY += avoid.y * 2.5
+        avoiding = true
       }
     }
 
@@ -101,12 +108,23 @@ export class Car {
     )
     this.steeringAngle += steerDelta
 
+    // Scale target speed by alignment — slow down when pointing away
+    // from the target so the car can tighten its turn instead of overshooting
+    const alignment = Math.cos(headingError)               // 1 = on target, 0 = perpendicular, -1 = backwards
+    const alignFactor = clamp(0.3 + 0.7 * alignment, 0.3, 1) // at worst 30% of max speed
+    const effectiveMax = this.maxSpeed * alignFactor
+
     if (shouldBrake) {
       this._skidding = this.speed > this.skidThreshold
       this.speed = Math.max(0, this.speed - this.brakeDecel * dt)
+    } else if (this.speed > effectiveMax) {
+      // Too fast for current heading error — ease off
+      this._skidding = false
+      this.speed = Math.max(effectiveMax, this.speed - this.brakeDecel * 0.5 * dt)
     } else {
       this._skidding = false
-      this.speed = Math.min(this.maxSpeed, this.speed + this.acceleration * dt)
+      this.speed = Math.min(effectiveMax, this.speed + this.acceleration * dt)
+      if (avoiding) this.speed *= this._avoidSpeedFactor
     }
 
     // Skid: allow mild steering overshoot for a drift look
@@ -119,6 +137,33 @@ export class Car {
     }
 
     this._applyBicycleModel(dt)
+
+    // Track cumulative rotation for orbit detection — only near the finish
+    const nearFinish = realDist < this.width * 5
+    if (nearFinish && this.speed > 5) {
+      const angularVel = (this.speed / this.wheelbase) * Math.tan(this.steeringAngle)
+      this._cumulativeRotation += Math.abs(angularVel * dt)
+    } else if (!nearFinish) {
+      this._cumulativeRotation = 0
+      this._orbiting = false
+    }
+
+    // Orbit escape: if the car has done a full rotation near the finish,
+    // it's stuck. Begin braking to a stop.
+    if (this._cumulativeRotation > Math.PI * 2) {
+      this._orbiting = true
+      this._cumulativeRotation = 0
+    }
+    if (this._orbiting) {
+      this.speed = Math.max(0, this.speed - this.brakeDecel * 0.6 * dt)
+      if (this.speed < 2) {
+        this.speed = 0
+        this.steeringAngle = 0
+        this._skidding = false
+        this._orbiting = false
+        this.target = null
+      }
+    }
 
     // Arrival
     if (realDist < this.arrivalRadius && this.speed < 10) {

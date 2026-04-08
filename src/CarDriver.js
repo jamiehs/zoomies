@@ -19,9 +19,11 @@ export class CarDriver {
     } = opts
 
     this.cars = []
+    this.debug = opts.debug ?? false
     this._carOptions = carOptions
     this._clickTarget = clickTarget
     this._rafId = null
+    this._finishLine = null  // { x1, y1, x2, y2 } for debug viz
 
     // Canvas setup
     this._canvas = document.createElement('canvas')
@@ -86,12 +88,25 @@ export class CarDriver {
       py = dx / dist
     }
 
-    // Spread cars along the perpendicular, centered on the click point
-    const spacing = this.cars[0].width * 1.5
+    // Spread cars along the perpendicular, centered on the click point.
+    // Shrink the spread when the click is close so targets stay reachable.
+    const idealSpacing = this.cars[0].width * 3
+    const maxSpread = dist * 0.6  // never spread wider than 60% of the approach distance
+    const idealTotal = (n - 1) * idealSpacing
+    const spacing = idealTotal > maxSpread && idealTotal > 0
+      ? maxSpread / (n - 1)
+      : idealSpacing
     const totalWidth = (n - 1) * spacing
     for (let i = 0; i < n; i++) {
       const offset = -totalWidth / 2 + i * spacing
       this.cars[i].driveTo(x + px * offset, y + py * offset)
+    }
+
+    // Store finish line for debug rendering
+    const half = totalWidth / 2
+    this._finishLine = {
+      x1: x - px * half, y1: y - py * half,
+      x2: x + px * half, y2: y + py * half,
     }
   }
 
@@ -145,6 +160,56 @@ export class CarDriver {
       car.render(ctx)
     }
 
+    if (this.debug) this._renderDebug(ctx)
+
     this._rafId = requestAnimationFrame(this._loop.bind(this))
+  }
+
+  _renderDebug(ctx) {
+    // Finish line
+    if (this._finishLine) {
+      const fl = this._finishLine
+      ctx.beginPath()
+      ctx.moveTo(fl.x1, fl.y1)
+      ctx.lineTo(fl.x2, fl.y2)
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+      ctx.lineWidth = 2
+      ctx.setLineDash([6, 4])
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
+
+    // Per-car: target crosshair + line from car to target
+    for (const car of this.cars) {
+      if (!car.target) continue
+      const tx = car.target.x
+      const ty = car.target.y
+      const size = 10
+
+      // Line from car to its target
+      ctx.beginPath()
+      ctx.moveTo(car.x, car.y)
+      ctx.lineTo(tx, ty)
+      ctx.strokeStyle = car.color + '66'
+      ctx.lineWidth = 1
+      ctx.stroke()
+
+      // Crosshair at target
+      ctx.beginPath()
+      ctx.moveTo(tx - size, ty)
+      ctx.lineTo(tx + size, ty)
+      ctx.moveTo(tx, ty - size)
+      ctx.lineTo(tx, ty + size)
+      ctx.strokeStyle = car.color
+      ctx.lineWidth = 2
+      ctx.stroke()
+
+      // Small circle at target showing arrival radius
+      ctx.beginPath()
+      ctx.arc(tx, ty, car.arrivalRadius, 0, Math.PI * 2)
+      ctx.strokeStyle = car.color + '44'
+      ctx.lineWidth = 1
+      ctx.stroke()
+    }
   }
 }
