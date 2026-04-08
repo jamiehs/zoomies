@@ -1,0 +1,15 @@
+{
+  "name": "car-driver",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/car-driver.iife.js",
+  "module": "./dist/car-driver.es.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

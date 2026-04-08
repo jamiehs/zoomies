@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>car-driver demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d0d0d;
+      color: #f0ede8;
+      font-family: 'Georgia', serif;
+      min-height: 100vh;
+    }
+
+    /* Simulated race-car site layout with wide margins */
+    .page {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 80px 20px;
+    }
+
+    h1 {
+      font-size: 2.8rem;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.4em;
+      color: #e63946;
+    }
+
+    h2 {
+      font-size: 1.4rem;
+      margin: 2em 0 0.6em;
+      color: #e9c46a;
+    }
+
+    p {
+      line-height: 1.75;
+      margin-bottom: 1em;
+      color: #ccc;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid #333;
+      margin: 2em 0;
+    }
+
+    #coords {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #555;
+      pointer-events: none;
+      z-index: 10000;
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+  <h1>Flat-Out Racing</h1>
+  <p>
+    Click anywhere on the page and watch the cars race to your cursor.
+    The cars use a realistic rear-axle bicycle model — they steer, accelerate,
+    brake, and drift when stopping at speed.
+  </p>
+
+  <hr />
+
+  <h2>The Grid</h2>
+  <p>
+    Five cars, five different lines into the first corner.
+    In the margins, you'll notice them jostling for position —
+    they avoid each other using a simple separation force so they
+    never quite collide, but they always race.
+  </p>
+
+  <h2>Programmatic API</h2>
+  <p>
+    Open the browser console and try:
+    <br /><code style="color:#2a9d8f">driver.cars[0].driveTo(200, 200)</code> — moves only car 0
+    <br /><code style="color:#2a9d8f">driver.driveTo(400, 300)</code> — moves all cars
+    <br /><code style="color:#2a9d8f">driver.addCar({ color: '#ff0' })</code> — adds a car
+  </p>
+
+  <hr />
+
+  <h2>About the physics</h2>
+  <p>
+    The steering model places the pivot point at the rear axle: the front
+    wheels turn up to 35°, and the car rotates according to
+    <em>ω = (v / L) · tan(δ)</em>, where <em>v</em> is speed, <em>L</em>
+    the wheelbase, and <em>δ</em> the steering angle. Braking distance is
+    computed from kinematics so the cars always stop exactly on target.
+  </p>
+</div>
+
+<div id="coords">click anywhere to drive</div>
+
+<script type="module">
+  import { CarDriver } from './src/index.js'
+
+  const driver = new CarDriver({ count: 3 })
+
+  // Expose for console experimentation
+  window.driver = driver
+
+  // Update coordinate display on click
+  document.addEventListener('click', (e) => {
+    document.getElementById('coords').textContent =
+      `last click → (${Math.round(e.clientX)}, ${Math.round(e.clientY)})`
+  })
+</script>
+
+</body>
+</html>
