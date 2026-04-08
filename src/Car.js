@@ -12,7 +12,7 @@ const DEFAULTS = {
   brakeDecel: 480,     // px/s²
   maxSteering: 35,     // degrees
   steeringRate: 120,   // degrees/s — how fast the wheel turns
-  arrivalRadius: 48 * 3, // 3× car width — must be > min turning radius (≈ 46px)
+  arrivalRadius: 144,    // ~3× car width — must be > min turning radius (≈ 46px)
   skidThreshold: 150,  // px/s — speed above which arrival triggers a skid
   color: '#e63946',
 }
@@ -44,6 +44,7 @@ export class Car {
     this._cumulativeRotation = 0  // tracks total rotation for orbit detection
     this._orbiting = false        // true when braking out of an orbit
     this._avoidSpeedFactor = 1    // random speed tweak when avoiding
+    this._wasColliding = false    // set by collision resolver each frame
     this._debugAvoiding = false   // true this frame if actively avoiding
     this._debugAvoidTargets = []  // cars being avoided this frame
     this._debugDesiredHeading = 0 // heading the car is trying to steer toward
@@ -187,14 +188,16 @@ export class Car {
     this.steeringAngle += steerDelta
 
     // Scale target speed by alignment — slow down when pointing away
-    // from the target so the car can tighten its turn instead of overshooting
-    const alignment = Math.cos(headingError)               // 1 = on target, 0 = perpendicular, -1 = backwards
-    const alignFactor = clamp(0.3 + 0.7 * alignment, 0.3, 1) // at worst 30% of max speed
+    // from the target so the car can tighten its turn instead of overshooting.
+    // But don't penalize alignment when in a collision (heading gets knocked around)
+    const alignment = Math.cos(headingError)
+    const alignFloor = this._wasColliding ? 0.7 : 0.3
+    const alignFactor = clamp(alignFloor + (1 - alignFloor) * alignment, alignFloor, 1)
 
-    // Proximity brake: slow down when very close to another car,
-    // but only if this car is BEHIND the other (further from target).
-    // The lead car should never slow down for a trailing car.
-    let proximityFactor = 1
+    // Proximity response: when very close to another car, the lead car
+    // (closer to target) gets a speed boost to pull away; the trailing
+    // car maintains its current speed. Neither slows down.
+    let proximityBoost = 0
     for (const other of others) {
       if (other === this) continue
       const dx = this.x - other.x
@@ -202,17 +205,20 @@ export class Car {
       const dist = Math.sqrt(dx * dx + dy * dy)
       const safetyDist = this.width * 1.5
       if (dist < safetyDist) {
-        // Skip braking if this car is closer to its target than the other
         const myDist = realDist
         const otherDx = (other.target ? other.target.x : other.x) - other.x
         const otherDy = (other.target ? other.target.y : other.y) - other.y
         const otherDist = Math.sqrt(otherDx * otherDx + otherDy * otherDy)
-        if (myDist < otherDist) continue  // we're the lead car, don't slow
-        proximityFactor = Math.min(proximityFactor, dist / safetyDist)
+        if (myDist < otherDist) {
+          // We're the lead car — boost to pull away
+          const urgency = 1 - (dist / safetyDist)
+          const boostAmount = this._wasColliding ? urgency * 0.7 : urgency * 0.3
+          proximityBoost = Math.max(proximityBoost, boostAmount)
+        }
       }
     }
 
-    const effectiveMax = this.maxSpeed * alignFactor * proximityFactor
+    const effectiveMax = this.maxSpeed * alignFactor * (1 + proximityBoost)
 
     if (shouldBrake) {
       this._skidding = this.speed > this.skidThreshold

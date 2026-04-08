@@ -6,14 +6,14 @@ export class CarDriver {
   /**
    * @param {object} opts
    * @param {number}  [opts.count=1]        Number of cars to spawn initially.
-   * @param {number}  [opts.zIndex=9999]    CSS z-index of the canvas overlay.
+   * @param {number}  [opts.zIndex=-1]      CSS z-index of the canvas overlay.
    * @param {Element} [opts.clickTarget]    Element to bind click events on (default: document).
    * @param {object}  [opts.carOptions]     Default options forwarded to each Car constructor.
    */
   constructor(opts = {}) {
     const {
       count = 1,
-      zIndex = 9999,
+      zIndex = -1,
       clickTarget = document,
       carOptions = {},
     } = opts
@@ -28,10 +28,9 @@ export class CarDriver {
     // Canvas setup
     this._canvas = document.createElement('canvas')
     const s = this._canvas.style
-    s.position = 'fixed'
-    s.inset = '0'
-    s.width = '100%'
-    s.height = '100%'
+    s.position = 'absolute'
+    s.top = '0'
+    s.left = '0'
     s.pointerEvents = 'none'
     s.zIndex = String(zIndex)
     document.body.appendChild(this._canvas)
@@ -43,13 +42,20 @@ export class CarDriver {
 
     // Click binding
     this._onClick = (e) => {
-      this.driveTo(e.clientX, e.clientY)
+      this.driveTo(e.pageX, e.pageY)
     }
     clickTarget.addEventListener('click', this._onClick)
 
-    // Spawn initial cars
+    // Spawn initial cars in a cluster with aligned headings
+    const spawnX = window.innerWidth * 0.8
+    const spawnY = window.innerHeight * 0.4
+    const baseHeading = Math.random() * Math.PI * 2
+    const carW = carOptions.width ?? 48
+    const spawnRadius = carW * (0.66 + count * 0.33)
+    const spawnPoints = CarDriver._scatterPoints(spawnX, spawnY, count, spawnRadius, carW * 1.5)
     for (let i = 0; i < count; i++) {
-      this.addCar()
+      const heading = baseHeading + (Math.random() - 0.5) * (10 * Math.PI / 180)  // ±5°
+      this.addCar({ x: spawnPoints[i].x, y: spawnPoints[i].y, heading })
     }
 
     // Start loop
@@ -67,43 +73,11 @@ export class CarDriver {
 
     // Scatter radius scales with car count so they have room
     const carW = this.cars[0].width
-    const scatterRadius = carW * (1 + n * 0.5)
+    const mult = this._scatterMult ?? 1.0
+    const scatterRadius = carW * (0.66 + n * 0.33) * mult
     const minSeparation = carW * 1.5
 
-    // Generate well-spaced targets via rejection sampling
-    const targets = []
-    const maxAttempts = 200
-    for (let i = 0; i < n; i++) {
-      let placed = false
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const angle = Math.random() * Math.PI * 2
-        const r = Math.random() * scatterRadius
-        const tx = x + Math.cos(angle) * r
-        const ty = y + Math.sin(angle) * r
-
-        // Check minimum distance from all already-placed targets
-        let tooClose = false
-        for (const t of targets) {
-          const dx = tx - t.x
-          const dy = ty - t.y
-          if (dx * dx + dy * dy < minSeparation * minSeparation) {
-            tooClose = true
-            break
-          }
-        }
-        if (!tooClose) {
-          targets.push({ x: tx, y: ty })
-          placed = true
-          break
-        }
-      }
-      // Fallback: if rejection sampling exhausts attempts, place anyway
-      if (!placed) {
-        const angle = Math.random() * Math.PI * 2
-        const r = Math.random() * scatterRadius
-        targets.push({ x: x + Math.cos(angle) * r, y: y + Math.sin(angle) * r })
-      }
-    }
+    const targets = CarDriver._scatterPoints(x, y, n, scatterRadius, minSeparation)
 
     // Sort targets by distance from center (furthest first)
     targets.sort((a, b) => {
@@ -150,6 +124,8 @@ export class CarDriver {
    */
   _resolveCollisions() {
     const cars = this.cars
+    // Reset collision flag each frame
+    for (const car of cars) car._wasColliding = false
     for (let i = 0; i < cars.length; i++) {
       for (let j = i + 1; j < cars.length; j++) {
         const a = cars[i]
@@ -157,7 +133,7 @@ export class CarDriver {
         const dx = b.x - a.x
         const dy = b.y - a.y
         const dist = Math.sqrt(dx * dx + dy * dy)
-        const minDist = (a.width + b.width) * 0.5  // treat cars as circles of diameter = width
+        const minDist = (a.width + b.width) * 0.5
 
         if (dist < minDist && dist > 0) {
           const overlap = minDist - dist
@@ -168,8 +144,22 @@ export class CarDriver {
           a.y -= ny * overlap * 0.5
           b.x += nx * overlap * 0.5
           b.y += ny * overlap * 0.5
+
+          // Rotational impulse: compute the cross product of the push
+          // direction against each car's forward axis. A hit to the
+          // side of the car spins it; a head-on hit doesn't.
+          // Moving cars get very light torque; parked cars get more.
+          const baseTorque = overlap * 0.015
+          const torqueA = a.target ? baseTorque * 0.15 : baseTorque
+          const torqueB = b.target ? baseTorque * 0.15 : baseTorque
+          const crossA = (-nx) * Math.sin(a.heading) - (-ny) * Math.cos(a.heading)
+          a.heading += crossA * torqueA
+          const crossB = nx * Math.sin(b.heading) - ny * Math.cos(b.heading)
+          b.heading += crossB * torqueB
+
+          a._wasColliding = true
+          b._wasColliding = true
         } else if (dist === 0) {
-          // Exactly on top of each other — nudge arbitrarily
           a.x -= 1
           b.x += 1
         }
@@ -189,8 +179,9 @@ export class CarDriver {
   }
 
   _resize() {
-    this._canvas.width = window.innerWidth
-    this._canvas.height = window.innerHeight
+    const docEl = document.documentElement
+    this._canvas.width = Math.max(docEl.scrollWidth, window.innerWidth)
+    this._canvas.height = Math.max(docEl.scrollHeight, window.innerHeight)
   }
 
   _loop(timestamp) {
@@ -341,5 +332,44 @@ export class CarDriver {
       ctx.lineWidth = 1
       ctx.stroke()
     }
+  }
+
+  /**
+   * Generate n well-spaced points in a circle via rejection sampling.
+   * @returns {{ x: number, y: number }[]}
+   */
+  static _scatterPoints(cx, cy, n, radius, minSeparation) {
+    const points = []
+    const maxAttempts = 200
+    for (let i = 0; i < n; i++) {
+      let placed = false
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const angle = Math.random() * Math.PI * 2
+        const r = Math.random() * radius
+        const px = cx + Math.cos(angle) * r
+        const py = cy + Math.sin(angle) * r
+
+        let tooClose = false
+        for (const p of points) {
+          const dx = px - p.x
+          const dy = py - p.y
+          if (dx * dx + dy * dy < minSeparation * minSeparation) {
+            tooClose = true
+            break
+          }
+        }
+        if (!tooClose) {
+          points.push({ x: px, y: py })
+          placed = true
+          break
+        }
+      }
+      if (!placed) {
+        const angle = Math.random() * Math.PI * 2
+        const r = Math.random() * radius
+        points.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r })
+      }
+    }
+    return points
   }
 }

@@ -12,13 +12,14 @@
       color: #f0ede8;
       font-family: 'Georgia', serif;
       min-height: 100vh;
+      overflow-x: hidden;
     }
 
     /* Simulated race-car site layout with wide margins */
     .page {
       max-width: 680px;
       margin: 0 auto;
-      padding: 80px 20px;
+      padding: 80px 20px 100vh;
     }
 
     h1 {
@@ -55,6 +56,31 @@
       color: #555;
       pointer-events: none;
       z-index: 10000;
+    }
+
+    #controls {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #aaa;
+      background: rgba(0,0,0,0.7);
+      padding: 12px 16px;
+      border-radius: 6px;
+      z-index: 10001;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #controls label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    #controls input[type="range"] {
+      width: 120px;
     }
   </style>
 </head>
@@ -98,20 +124,63 @@
   </p>
 </div>
 
+<div id="controls">
+  <label>Arrival radius <span id="arrivalVal">144</span>px
+    <input type="range" id="arrivalSlider" min="48" max="240" value="144" step="4" />
+  </label>
+  <label>Scatter radius mult <span id="scatterVal">1.40</span>×
+    <input type="range" id="scatterSlider" min="0.3" max="2.0" value="1.4" step="0.05" />
+  </label>
+</div>
+
 <div id="coords">click anywhere to drive</div>
 
 <script type="module">
   import { CarDriver } from './src/index.js'
 
-  const driver = new CarDriver({ count: 5, debug: true })
+  const driver = new CarDriver({ count: 4 })
 
   // Expose for console experimentation
   window.driver = driver
 
+  // Shift+Space toggles debug overlay
+  document.addEventListener('keydown', (e) => {
+    if (e.shiftKey && e.code === 'Space') {
+      e.preventDefault()
+      driver.debug = !driver.debug
+    }
+  })
+
+  // Stop clicks on controls from driving cars
+  document.getElementById('controls').addEventListener('click', (e) => {
+    e.stopPropagation()
+  })
+
+  // Arrival radius slider
+  const arrivalSlider = document.getElementById('arrivalSlider')
+  const arrivalVal = document.getElementById('arrivalVal')
+  arrivalSlider.addEventListener('input', () => {
+    const v = Number(arrivalSlider.value)
+    arrivalVal.textContent = v
+    for (const car of driver.cars) car.arrivalRadius = v
+  })
+
+  // Scatter radius multiplier slider
+  const scatterSlider = document.getElementById('scatterSlider')
+  const scatterVal = document.getElementById('scatterVal')
+  scatterSlider.addEventListener('input', () => {
+    scatterVal.textContent = Number(scatterSlider.value).toFixed(2)
+  })
+  // Store multiplier on driver so driveTo can read it
+  driver._scatterMult = 1.4
+  scatterSlider.addEventListener('input', () => {
+    driver._scatterMult = Number(scatterSlider.value)
+  })
+
   // Update coordinate display on click
   document.addEventListener('click', (e) => {
     document.getElementById('coords').textContent =
-      `last click → (${Math.round(e.clientX)}, ${Math.round(e.clientY)})`
+      `last click → (${Math.round(e.pageX)}, ${Math.round(e.pageY)})`
   })
 </script>
 
