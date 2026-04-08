@@ -9,4 +9,7 @@ export default defineConfig({
       formats: ['es', 'iife'],
     },
   },
+  test: {
+    environment: 'jsdom',
+  },
 })
