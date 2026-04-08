@@ -1,4 +1,4 @@
-import { angleDiff, clamp, vec2 } from './utils.js'
+import { angleDiff, clamp, vec2, bezierPoint, bezierLength } from './utils.js'
 
 const DEG = Math.PI / 180
 
@@ -44,12 +44,52 @@ export class Car {
     this._cumulativeRotation = 0  // tracks total rotation for orbit detection
     this._orbiting = false        // true when braking out of an orbit
     this._avoidSpeedFactor = 1    // random speed tweak when avoiding
+    this.path = null              // { p0, p1, p2, p3 } cubic bezier
+    this._pathT = 0               // progress along path (0–1)
+    this._pathLen = 0             // approximate arc length
   }
 
   driveTo(x, y) {
     this.target = { x, y }
     this._cumulativeRotation = 0
     this._avoidSpeedFactor = 0.97 + Math.random() * 0.06  // 0.97–1.03
+    this._generatePath(x, y)
+  }
+
+  _generatePath(tx, ty) {
+    const p0 = { x: this.x, y: this.y }
+    const p3 = { x: tx, y: ty }
+
+    const dx = p3.x - p0.x
+    const dy = p3.y - p0.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
+
+    if (dist < 1) {
+      this.path = null
+      return
+    }
+
+    // Perpendicular to the straight line
+    const px = -dy / dist
+    const py = dx / dist
+
+    // Random curvature — each control point gets an independent offset
+    // for variety (arcs, S-curves, mild wiggles)
+    const curve1 = (Math.random() - 0.5) * dist * 0.6
+    const curve2 = (Math.random() - 0.5) * dist * 0.4
+
+    const p1 = {
+      x: p0.x + dx * 0.33 + px * curve1,
+      y: p0.y + dy * 0.33 + py * curve1,
+    }
+    const p2 = {
+      x: p0.x + dx * 0.67 + px * curve2,
+      y: p0.y + dy * 0.67 + py * curve2,
+    }
+
+    this.path = { p0, p1, p2, p3 }
+    this._pathT = 0
+    this._pathLen = bezierLength(p0, p1, p2, p3)
   }
 
   /**
@@ -76,20 +116,34 @@ export class Car {
     // is just for parking, not for triggering early deceleration
     const brakingDist = (this.speed * this.speed) / (2 * this.brakeDecel)
     const shouldBrake = realDist < brakingDist * 1.2
+    const insideArrival = realDist < this.arrivalRadius
 
-    // Always steer toward the real target, but blend in avoidance as a
-    // lateral bias while cruising. This way the car curves around others
-    // en route but never loses sight of where it's actually going.
-    const toTargetX = realDx / (realDist || 1)
-    const toTargetY = realDy / (realDist || 1)
+    // Sync path progress with actual position — derive from remaining
+    // distance so the lookahead never falls behind the car
+    if (this.path && this._pathT < 1) {
+      const distanceT = 1 - (realDist / (this._pathLen || 1))
+      const travelT = this._pathT + (this.speed * dt) / (this._pathLen || 1)
+      this._pathT = clamp(Math.max(distanceT, travelT), this._pathT, 1)
+    }
 
-    const targetHeading = Math.atan2(toTargetY, toTargetX)
+    let steerX, steerY
+    if (this.path && this._pathT < 1) {
+      // Lookahead: aim a bit ahead on the curve for smooth steering
+      const lookahead = Math.min(this._pathT + 0.08, 1)
+      const pt = bezierPoint(this.path.p0, this.path.p1, this.path.p2, this.path.p3, lookahead)
+      const dx = pt.x - this.x
+      const dy = pt.y - this.y
+      const d = Math.sqrt(dx * dx + dy * dy) || 1
+      steerX = dx / d
+      steerY = dy / d
+    } else {
+      steerX = realDx / (realDist || 1)
+      steerY = realDy / (realDist || 1)
+    }
 
-    let steerX = toTargetX
-    let steerY = toTargetY
+    const targetHeading = Math.atan2(realDy / (realDist || 1), realDx / (realDist || 1))
 
     let avoiding = false
-    const insideArrival = realDist < this.arrivalRadius
     if (!shouldBrake && !insideArrival) {
       const avoid = this._avoidanceForce(others)
       const avoidLen = Math.sqrt(avoid.x * avoid.x + avoid.y * avoid.y)
@@ -124,7 +178,21 @@ export class Car {
     // from the target so the car can tighten its turn instead of overshooting
     const alignment = Math.cos(headingError)               // 1 = on target, 0 = perpendicular, -1 = backwards
     const alignFactor = clamp(0.3 + 0.7 * alignment, 0.3, 1) // at worst 30% of max speed
-    const effectiveMax = this.maxSpeed * alignFactor
+
+    // Proximity brake: slow down when very close to another car
+    let proximityFactor = 1
+    for (const other of others) {
+      if (other === this) continue
+      const dx = this.x - other.x
+      const dy = this.y - other.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const safetyDist = this.width * 1.5
+      if (dist < safetyDist) {
+        proximityFactor = Math.min(proximityFactor, dist / safetyDist)
+      }
+    }
+
+    const effectiveMax = this.maxSpeed * alignFactor * proximityFactor
 
     if (shouldBrake) {
       this._skidding = this.speed > this.skidThreshold

@@ -196,6 +196,26 @@ export class CarDriver {
       ctx.fill()
     }
 
+    // Per-car: bezier path
+    for (const car of this.cars) {
+      if (!car.path) continue
+      const { p0, p1, p2, p3 } = car.path
+      ctx.beginPath()
+      ctx.moveTo(p0.x, p0.y)
+      ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)
+      ctx.strokeStyle = car.color + '44'
+      ctx.lineWidth = 2
+      ctx.stroke()
+
+      // Show control points as small dots
+      for (const cp of [p1, p2]) {
+        ctx.beginPath()
+        ctx.arc(cp.x, cp.y, 3, 0, Math.PI * 2)
+        ctx.fillStyle = car.color + '66'
+        ctx.fill()
+      }
+    }
+
     // Per-car: avoidance radius (shaded circle around the car itself)
     for (const car of this.cars) {
       const avoidR = car.width * 0.5
@@ -208,20 +228,12 @@ export class CarDriver {
       ctx.stroke()
     }
 
-    // Per-car: target crosshair + line from car to target
+    // Per-car: target crosshair + arrival radius
     for (const car of this.cars) {
       if (!car.target) continue
       const tx = car.target.x
       const ty = car.target.y
       const size = 10
-
-      // Line from car to its target
-      ctx.beginPath()
-      ctx.moveTo(car.x, car.y)
-      ctx.lineTo(tx, ty)
-      ctx.strokeStyle = car.color + '66'
-      ctx.lineWidth = 1
-      ctx.stroke()
 
       // Crosshair at target
       ctx.beginPath()
