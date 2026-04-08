@@ -143,6 +143,40 @@ export class CarDriver {
     if (idx !== -1) this.cars.splice(idx, 1)
   }
 
+  /**
+   * Push overlapping cars apart so they never visually intersect.
+   * Each pair is checked; if overlapping, both are nudged along
+   * the separation axis by half the overlap distance.
+   */
+  _resolveCollisions() {
+    const cars = this.cars
+    for (let i = 0; i < cars.length; i++) {
+      for (let j = i + 1; j < cars.length; j++) {
+        const a = cars[i]
+        const b = cars[j]
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const minDist = (a.width + b.width) * 0.5  // treat cars as circles of diameter = width
+
+        if (dist < minDist && dist > 0) {
+          const overlap = minDist - dist
+          const nx = dx / dist
+          const ny = dy / dist
+          // Push each car half the overlap
+          a.x -= nx * overlap * 0.5
+          a.y -= ny * overlap * 0.5
+          b.x += nx * overlap * 0.5
+          b.y += ny * overlap * 0.5
+        } else if (dist === 0) {
+          // Exactly on top of each other — nudge arbitrarily
+          a.x -= 1
+          b.x += 1
+        }
+      }
+    }
+  }
+
   /** Stop the animation loop and remove the canvas and event listeners. */
   destroy() {
     if (this._rafId !== null) {
@@ -169,6 +203,12 @@ export class CarDriver {
     for (const car of this.cars) {
       car.update(dt, this.cars)
     }
+
+    // Post-movement collision resolution: push overlapping cars apart.
+    // This is a hard constraint — no matter what steering does, cars
+    // will never visually overlap.
+    this._resolveCollisions()
+
     for (const car of this.cars) {
       car.render(ctx)
     }
@@ -218,7 +258,7 @@ export class CarDriver {
 
     // Per-car: avoidance radius, active-avoidance highlight, desired heading
     for (const car of this.cars) {
-      const avoidR = car.width * 0.5
+      const avoidR = car.width * 0.66
       ctx.beginPath()
       ctx.arc(car.x, car.y, avoidR, 0, Math.PI * 2)
       ctx.fillStyle = car.color + '15'

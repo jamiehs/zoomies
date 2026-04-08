@@ -173,15 +173,7 @@ export class Car {
     }
     this._debugAvoiding = avoiding
 
-    let desiredHeading = Math.atan2(steerY, steerX)
-
-    // Clamp avoidance deflection: never steer more than 30° away from
-    // the direct-to-target heading, so avoidance can't cause full orbits
-    const maxDeflection = 15 * DEG
-    const deflection = angleDiff(targetHeading, desiredHeading)
-    if (Math.abs(deflection) > maxDeflection) {
-      desiredHeading = targetHeading + Math.sign(deflection) * maxDeflection
-    }
+    const desiredHeading = Math.atan2(steerY, steerX)
     const headingError = angleDiff(this.heading, desiredHeading)
     this._debugDesiredHeading = desiredHeading
 
@@ -199,7 +191,9 @@ export class Car {
     const alignment = Math.cos(headingError)               // 1 = on target, 0 = perpendicular, -1 = backwards
     const alignFactor = clamp(0.3 + 0.7 * alignment, 0.3, 1) // at worst 30% of max speed
 
-    // Proximity brake: slow down when very close to another car
+    // Proximity brake: slow down when very close to another car,
+    // but only if this car is BEHIND the other (further from target).
+    // The lead car should never slow down for a trailing car.
     let proximityFactor = 1
     for (const other of others) {
       if (other === this) continue
@@ -208,6 +202,12 @@ export class Car {
       const dist = Math.sqrt(dx * dx + dy * dy)
       const safetyDist = this.width * 1.5
       if (dist < safetyDist) {
+        // Skip braking if this car is closer to its target than the other
+        const myDist = realDist
+        const otherDx = (other.target ? other.target.x : other.x) - other.x
+        const otherDy = (other.target ? other.target.y : other.y) - other.y
+        const otherDist = Math.sqrt(otherDx * otherDx + otherDy * otherDy)
+        if (myDist < otherDist) continue  // we're the lead car, don't slow
         proximityFactor = Math.min(proximityFactor, dist / safetyDist)
       }
     }
@@ -281,7 +281,7 @@ export class Car {
    * Used as a steering bias, NOT a target offset.
    */
   _avoidanceForce(others) {
-    const radius = this.width * 0.5
+    const radius = this.width * 0.66
     let fx = 0
     let fy = 0
     const avoidTargets = []
