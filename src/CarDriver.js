@@ -20,12 +20,47 @@ export class CarDriver {
 
     this.cars = []
     this.debug = opts.debug ?? false
+    this.skidOpacity = opts.skidOpacity ?? 0.33
     this._carOptions = carOptions
     this._clickTarget = clickTarget
     this._rafId = null
     this._finishLine = null  // { x1, y1, x2, y2 } for debug viz
 
-    // Canvas setup
+    // Skidmarks: each entry is { x1, y1, x2, y2, type, alpha }
+    // Stored as a replay buffer for resize recovery; max 6000 segments
+    this._skidmarks = []
+    this._maxSkidmarks = 6000
+
+    // Per-event coin flip: flip once when a skid type starts, hold for its duration
+    this._skidEnabled  = new Map()  // car → bool
+    this._lastSkidType = new Map()  // car → last active type (to detect new events)
+
+    // Stop/accel tracks: both tires emitted immediately
+    this._stopAccelPrev = new Map()  // car → { lx, ly, rx, ry }
+    this._prevSpeed     = new Map()  // car → speed last frame (for accel detection)
+
+    // Bump tracks: four wheels, fired when a nearly-stopped car is nudged
+    this._bumpPrev = new Map()  // car → { flx, fly, frx, fry, rlx, rly, rrx, rry }
+
+    // Turn tracks: outer emitted immediately, inner delayed so it starts late and ends early
+    this._turnOuterPrev        = new Map()  // car → { x, y }
+    this._turnInnerQueue       = new Map()  // car → Array<{ x, y, steerAngle }>
+    this._turnInnerDelayedPrev = new Map()  // car → { x, y }
+    this._turnStreakId         = new Map()  // car → current streak ID
+    this._nextStreakId         = 0
+
+    // Persistent skid canvas — drawn to once per segment, never cleared except on resize
+    this._skidCanvas = document.createElement('canvas')
+    const sk = this._skidCanvas.style
+    sk.position = 'absolute'
+    sk.top = '0'
+    sk.left = '0'
+    sk.pointerEvents = 'none'
+    sk.zIndex = String(zIndex - 1)
+    document.body.appendChild(this._skidCanvas)
+    this._skidCtx = this._skidCanvas.getContext('2d')
+
+    // Main canvas (cars + debug overlay)
     this._canvas = document.createElement('canvas')
     const s = this._canvas.style
     s.position = 'absolute'
@@ -117,6 +152,153 @@ export class CarDriver {
     if (idx !== -1) this.cars.splice(idx, 1)
   }
 
+  _pushSkid(seg) {
+    this._skidmarks.push(seg)
+    if (this._skidmarks.length > this._maxSkidmarks) this._skidmarks.shift()
+    this._drawSkidSegment(seg)
+  }
+
+  _drawSkidSegment(s) {
+    const COLORS = this.debug
+      ? { accel: '102, 51, 153', turn: '0, 255, 255', stop: '255, 20, 147', bump: '255, 165, 0' }
+      : { accel: '20, 15, 10',   turn: '20, 15, 10',  stop: '20, 15, 10',   bump: '20, 15, 10'  }
+    this._skidCtx.lineCap = 'round'
+    this._skidCtx.lineWidth = 3
+    this._skidCtx.strokeStyle = `rgba(${COLORS[s.type]}, ${s.alpha * this.skidOpacity})`
+    this._skidCtx.beginPath()
+    this._skidCtx.moveTo(s.x1, s.y1)
+    this._skidCtx.lineTo(s.x2, s.y2)
+    this._skidCtx.stroke()
+  }
+
+  /**
+   * Emit skidmark segments for a car based on its current driving state.
+   * Priority: stop > turn > accel (multiple can be true at once; one wins).
+   *   stop  — hard braking at speed (car._skidding)
+   *   turn  — cornering near steering lock at speed
+   *   accel — wheel-spin during launch (low speed, has target, not braking)
+   *
+   * Turning skidmarks use a delay queue for the inner wheel: it starts emitting
+   * D frames late and stops D frames early, giving a centered shorter inner track
+   * with no gaps — matching real tyre load transfer behaviour.
+   */
+  _emitSkidmarks(car) {
+    const prevSpeed = this._prevSpeed.get(car) ?? car.speed
+    this._prevSpeed.set(car, car.speed)
+    const speeding  = car.speed > prevSpeed  // actually gaining speed this frame
+
+    const stop  = car._skidding
+    const bump  = !stop && car._wasColliding && car.speed < 20
+    const turn  = !stop && !bump && Math.abs(car.steeringAngle) > car.maxSteering * 0.65 && car.speed > 100
+    const accel = !stop && !bump && !turn && speeding && car.target !== null && car.speed > 10 && car.speed < 100
+    const type = stop ? 'stop' : bump ? 'bump' : turn ? 'turn' : accel ? 'accel' : null
+
+    // Flip once per event (when type changes), hold the decision for its duration
+    if (type !== this._lastSkidType.get(car)) {
+      this._skidEnabled.set(car, Math.random() >= 0.5)
+      this._lastSkidType.set(car, type)
+    }
+
+    if (!type || !this._skidEnabled.get(car)) {
+      // Clear prev state so there's no phantom segment when the next event starts
+      this._stopAccelPrev.delete(car)
+      this._bumpPrev.delete(car)
+      this._clearTurnState(car)
+      return
+    }
+
+    const perpX  = -Math.sin(car.heading)
+    const perpY  =  Math.cos(car.heading)
+    const fwdX   =  Math.cos(car.heading)
+    const fwdY   =  Math.sin(car.heading)
+    const trackHalf = car.height * 0.38
+    // car.x/y is the visual center; axles sit ±28% of width from center
+    const axleOffset = car.width * 0.28
+
+    // Rear axle wheel positions
+    const rlx = car.x - fwdX * axleOffset + perpX * trackHalf
+    const rly = car.y - fwdY * axleOffset + perpY * trackHalf
+    const rrx = car.x - fwdX * axleOffset - perpX * trackHalf
+    const rry = car.y - fwdY * axleOffset - perpY * trackHalf
+    // Front axle wheel positions
+    const flx = car.x + fwdX * axleOffset + perpX * trackHalf
+    const fly = car.y + fwdY * axleOffset + perpY * trackHalf
+    const frx = car.x + fwdX * axleOffset - perpX * trackHalf
+    const fry = car.y + fwdY * axleOffset - perpY * trackHalf
+
+    // Aliases for two-wheel types (rear axle)
+    const lx = rlx, ly = rly, rx = rrx, ry = rry
+
+    // Alpha baked at emit time — persistent canvas means no global i/n position
+    const solidAlpha = 0.75
+    const accelAlpha = Math.max(0, 1 - (car.speed - 10) / 90)                // solid at launch → 0 at 100px/s
+    const turnAlpha  = (Math.abs(car.steeringAngle) / car.maxSteering) * 0.7  // proportional to steering lock
+
+    if (type === 'bump') {
+      const prev = this._bumpPrev.get(car)
+      if (prev) {
+        this._pushSkid({ x1: prev.flx, y1: prev.fly, x2: flx, y2: fly, type, alpha: solidAlpha })
+        this._pushSkid({ x1: prev.frx, y1: prev.fry, x2: frx, y2: fry, type, alpha: solidAlpha })
+        this._pushSkid({ x1: prev.rlx, y1: prev.rly, x2: rlx, y2: rly, type, alpha: solidAlpha })
+        this._pushSkid({ x1: prev.rrx, y1: prev.rry, x2: rrx, y2: rry, type, alpha: solidAlpha })
+      }
+      this._bumpPrev.set(car, { flx, fly, frx, fry, rlx, rly, rrx, rry })
+      this._stopAccelPrev.delete(car)
+      this._clearTurnState(car)
+    } else if (type === 'stop' || type === 'accel') {
+      this._bumpPrev.delete(car)
+      const alpha = type === 'stop' ? solidAlpha : accelAlpha
+      const prev = this._stopAccelPrev.get(car)
+      if (prev) {
+        this._pushSkid({ x1: prev.lx, y1: prev.ly, x2: lx, y2: ly, type, alpha })
+        this._pushSkid({ x1: prev.rx, y1: prev.ry, x2: rx, y2: ry, type, alpha })
+      }
+      this._stopAccelPrev.set(car, { lx, ly, rx, ry })
+      this._clearTurnState(car)
+    } else if (type === 'turn') {
+      this._bumpPrev.delete(car)
+      const innerLeft = car.steeringAngle > 0  // left turn → left tyre is inner
+      const ox = innerLeft ? rx : lx,  oy = innerLeft ? ry : ly  // outer
+      const ix = innerLeft ? lx : rx,  iy = innerLeft ? ly : ry  // inner
+
+      if (!this._turnOuterPrev.has(car)) {
+        this._turnStreakId.set(car, this._nextStreakId++)
+      }
+      const streakId = this._turnStreakId.get(car)
+
+      // Outer track — emit immediately with steering-proportional alpha
+      const outerPrev = this._turnOuterPrev.get(car)
+      if (outerPrev) {
+        this._pushSkid({ x1: outerPrev.x, y1: outerPrev.y, x2: ox, y2: oy, type, streakId, isInner: false, alpha: turnAlpha })
+      }
+      this._turnOuterPrev.set(car, { x: ox, y: oy })
+
+      // Inner track — delay by D frames; steeringAngle stored in queue for accurate alpha at emit time
+      const D = 10
+      let queue = this._turnInnerQueue.get(car)
+      if (!queue) { queue = []; this._turnInnerQueue.set(car, queue) }
+      queue.push({ x: ix, y: iy, steerAngle: car.steeringAngle })
+      if (queue.length > D) {
+        const current = queue.shift()
+        const delayedPrev = this._turnInnerDelayedPrev.get(car)
+        const innerAlpha = (Math.abs(current.steerAngle) / car.maxSteering) * 0.7 * 0.5
+        if (delayedPrev) {
+          this._pushSkid({ x1: delayedPrev.x, y1: delayedPrev.y, x2: current.x, y2: current.y, type, streakId, isInner: true, alpha: innerAlpha })
+        }
+        this._turnInnerDelayedPrev.set(car, current)
+      }
+
+      this._stopAccelPrev.delete(car)
+    }
+  }
+
+  _clearTurnState(car) {
+    this._turnOuterPrev.delete(car)
+    this._turnInnerQueue.delete(car)
+    this._turnInnerDelayedPrev.delete(car)
+    this._turnStreakId.delete(car)
+  }
+
   /**
    * Push overlapping cars apart so they never visually intersect.
    * Each pair is checked; if overlapping, both are nudged along
@@ -176,12 +358,19 @@ export class CarDriver {
     this._clickTarget.removeEventListener('click', this._onClick)
     window.removeEventListener('resize', this._onResize)
     this._canvas.remove()
+    this._skidCanvas.remove()
   }
 
   _resize() {
     const docEl = document.documentElement
-    this._canvas.width = Math.max(docEl.scrollWidth, window.innerWidth)
-    this._canvas.height = Math.max(docEl.scrollHeight, window.innerHeight)
+    const w = Math.max(docEl.scrollWidth, window.innerWidth)
+    const h = Math.max(docEl.scrollHeight, window.innerHeight)
+    this._canvas.width = w
+    this._canvas.height = h
+    this._skidCanvas.width = w
+    this._skidCanvas.height = h
+    // Replay stored segments back onto the freshly-cleared skid canvas
+    for (const s of this._skidmarks) this._drawSkidSegment(s)
   }
 
   _loop(timestamp) {
@@ -199,6 +388,21 @@ export class CarDriver {
     // This is a hard constraint — no matter what steering does, cars
     // will never visually overlap.
     this._resolveCollisions()
+
+    // Emit new skidmark segments; clean up prev-refs for removed cars
+    for (const car of this.cars) this._emitSkidmarks(car)
+    for (const car of this._stopAccelPrev.keys()) {
+      if (!this.cars.includes(car)) {
+        this._stopAccelPrev.delete(car)
+        this._prevSpeed.delete(car)
+        this._bumpPrev.delete(car)
+        this._skidEnabled.delete(car)
+        this._lastSkidType.delete(car)
+      }
+    }
+    for (const car of this._turnOuterPrev.keys()) {
+      if (!this.cars.includes(car)) this._clearTurnState(car)
+    }
 
     for (const car of this.cars) {
       car.render(ctx)
@@ -307,6 +511,39 @@ export class CarDriver {
         ctx.fill()
       }
     }
+
+    // Per-car: skid type indicator — ring + label in matching skidmark color
+    const SKID_COLORS = { accel: 'rebeccapurple', turn: 'aqua', stop: 'deeppink', bump: 'orange' }
+    const SKID_LABELS = { accel: 'ACCEL', turn: 'CORNER', stop: 'BRAKE', bump: 'BUMP' }
+    for (const car of this.cars) {
+      const stop  = car._skidding
+      const bump  = !stop && car._wasColliding && car.speed < 20
+      const turn  = !stop && !bump && Math.abs(car.steeringAngle) > car.maxSteering * 0.65 && car.speed > 100
+      const accel = !stop && !bump && !turn && car.target !== null && car.speed > 10 && car.speed < 100
+      const type  = stop ? 'stop' : bump ? 'bump' : turn ? 'turn' : accel ? 'accel' : null
+      if (!type) continue
+
+      ctx.beginPath()
+      ctx.arc(car.x, car.y, car.width * 0.7, 0, Math.PI * 2)
+      ctx.strokeStyle = SKID_COLORS[type]
+      ctx.lineWidth = 2
+      ctx.setLineDash([4, 3])
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      ctx.fillStyle = SKID_COLORS[type]
+      ctx.font = 'bold 10px monospace'
+      ctx.fillText(SKID_LABELS[type], car.x + car.width * 0.75, car.y - 4)
+    }
+
+    // Skidmark segment count breakdown by type
+    const counts = { accel: 0, turn: 0, stop: 0, bump: 0 }
+    for (const s of this._skidmarks) counts[s.type]++
+    ctx.font = '11px monospace'
+    ctx.fillStyle = 'rebeccapurple'; ctx.fillText(`accel: ${counts.accel}`, 12, this._canvas.height - 66)
+    ctx.fillStyle = 'aqua';          ctx.fillText(`turn:  ${counts.turn}`,  12, this._canvas.height - 52)
+    ctx.fillStyle = 'deeppink';      ctx.fillText(`stop:  ${counts.stop}`,  12, this._canvas.height - 38)
+    ctx.fillStyle = 'orange';        ctx.fillText(`bump:  ${counts.bump}`,  12, this._canvas.height - 24)
 
     // Per-car: target crosshair + arrival radius
     for (const car of this.cars) {
