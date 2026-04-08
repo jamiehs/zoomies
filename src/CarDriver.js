@@ -216,7 +216,7 @@ export class CarDriver {
       }
     }
 
-    // Per-car: avoidance radius (shaded circle around the car itself)
+    // Per-car: avoidance radius, active-avoidance highlight, desired heading
     for (const car of this.cars) {
       const avoidR = car.width * 0.5
       ctx.beginPath()
@@ -226,6 +226,55 @@ export class CarDriver {
       ctx.strokeStyle = car.color + '33'
       ctx.lineWidth = 1
       ctx.stroke()
+
+      // Highlight: rectangle outline around car when actively avoiding
+      if (car._debugAvoiding) {
+        ctx.save()
+        ctx.translate(car.x, car.y)
+        ctx.rotate(car.heading)
+        const pad = 6
+        ctx.strokeStyle = '#ff0'
+        ctx.lineWidth = 2
+        ctx.strokeRect(
+          -car.width / 2 - pad, -car.height / 2 - pad,
+          car.width + pad * 2, car.height + pad * 2,
+        )
+        ctx.restore()
+
+        // Flash the cars being avoided
+        for (const other of car._debugAvoidTargets) {
+          ctx.save()
+          ctx.translate(other.x, other.y)
+          ctx.rotate(other.heading)
+          ctx.strokeStyle = '#f0f'
+          ctx.lineWidth = 2
+          ctx.setLineDash([4, 3])
+          ctx.strokeRect(
+            -other.width / 2 - 4, -other.height / 2 - 4,
+            other.width + 8, other.height + 8,
+          )
+          ctx.setLineDash([])
+          ctx.restore()
+        }
+      }
+
+      // Desired heading: line from car center showing where it wants to go
+      if (car.target) {
+        const len = 40
+        const hx = Math.cos(car._debugDesiredHeading) * len
+        const hy = Math.sin(car._debugDesiredHeading) * len
+        ctx.beginPath()
+        ctx.moveTo(car.x, car.y)
+        ctx.lineTo(car.x + hx, car.y + hy)
+        ctx.strokeStyle = '#0f0'
+        ctx.lineWidth = 2
+        ctx.stroke()
+        // Small arrowhead
+        ctx.beginPath()
+        ctx.arc(car.x + hx, car.y + hy, 3, 0, Math.PI * 2)
+        ctx.fillStyle = '#0f0'
+        ctx.fill()
+      }
     }
 
     // Per-car: target crosshair + arrival radius

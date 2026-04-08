@@ -44,6 +44,9 @@ export class Car {
     this._cumulativeRotation = 0  // tracks total rotation for orbit detection
     this._orbiting = false        // true when braking out of an orbit
     this._avoidSpeedFactor = 1    // random speed tweak when avoiding
+    this._debugAvoiding = false   // true this frame if actively avoiding
+    this._debugAvoidTargets = []  // cars being avoided this frame
+    this._debugDesiredHeading = 0 // heading the car is trying to steer toward
     this.path = null              // { p0, p1, p2, p3 } cubic bezier
     this._pathT = 0               // progress along path (0–1)
     this._pathLen = 0             // approximate arc length
@@ -118,6 +121,20 @@ export class Car {
     const shouldBrake = realDist < brakingDist * 1.2
     const insideArrival = realDist < this.arrivalRadius
 
+    // Inside arrival radius: just brake to a stop, don't steer
+    if (insideArrival) {
+      this.speed = Math.max(0, this.speed - this.brakeDecel * dt)
+      this._applyBicycleModel(dt)
+      if (this.speed < 10) {
+        this.speed = 0
+        this.steeringAngle = 0
+        this._skidding = false
+        this.target = null
+        this.path = null
+      }
+      return
+    }
+
     // Sync path progress with actual position — derive from remaining
     // distance so the lookahead never falls behind the car
     if (this.path && this._pathT < 1) {
@@ -144,6 +161,7 @@ export class Car {
     const targetHeading = Math.atan2(realDy / (realDist || 1), realDx / (realDist || 1))
 
     let avoiding = false
+    this._debugAvoidTargets = []
     if (!shouldBrake && !insideArrival) {
       const avoid = this._avoidanceForce(others)
       const avoidLen = Math.sqrt(avoid.x * avoid.x + avoid.y * avoid.y)
@@ -153,6 +171,7 @@ export class Car {
         avoiding = true
       }
     }
+    this._debugAvoiding = avoiding
 
     let desiredHeading = Math.atan2(steerY, steerX)
 
@@ -164,6 +183,7 @@ export class Car {
       desiredHeading = targetHeading + Math.sign(deflection) * maxDeflection
     }
     const headingError = angleDiff(this.heading, desiredHeading)
+    this._debugDesiredHeading = desiredHeading
 
     // Drive steering toward desired, clamped to maxSteering
     const targetSteering = clamp(headingError, -this.maxSteering, this.maxSteering)
@@ -245,13 +265,6 @@ export class Car {
       }
     }
 
-    // Arrival
-    if (realDist < this.arrivalRadius && this.speed < 10) {
-      this.speed = 0
-      this.steeringAngle = 0
-      this._skidding = false
-      this.target = null
-    }
   }
 
   _applyBicycleModel(dt) {
@@ -271,6 +284,7 @@ export class Car {
     const radius = this.width * 0.5
     let fx = 0
     let fy = 0
+    const avoidTargets = []
 
     for (const other of others) {
       if (other === this) continue
@@ -283,9 +297,11 @@ export class Car {
         const strength = (minDist - dist) / minDist
         fx += (dx / dist) * strength
         fy += (dy / dist) * strength
+        avoidTargets.push(other)
       }
     }
 
+    this._debugAvoidTargets = avoidTargets
     return { x: fx, y: fy }
   }
 
