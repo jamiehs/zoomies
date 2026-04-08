@@ -89,13 +89,8 @@ export class CarDriver {
     }
 
     // Spread cars along the perpendicular, centered on the click point.
-    // Shrink the spread when the click is close so targets stay reachable.
-    const idealSpacing = this.cars[0].width * 3
-    const maxSpread = dist * 0.6  // never spread wider than 60% of the approach distance
-    const idealTotal = (n - 1) * idealSpacing
-    const spacing = idealTotal > maxSpread && idealTotal > 0
-      ? maxSpread / (n - 1)
-      : idealSpacing
+    // Width is purely a function of car count, not distance.
+    const spacing = this.cars[0].width * 1.5
     const totalWidth = (n - 1) * spacing
     for (let i = 0; i < n; i++) {
       const offset = -totalWidth / 2 + i * spacing

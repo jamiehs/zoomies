@@ -81,6 +81,8 @@ export class Car {
     const toTargetX = realDx / (realDist || 1)
     const toTargetY = realDy / (realDist || 1)
 
+    const targetHeading = Math.atan2(toTargetY, toTargetX)
+
     let steerX = toTargetX
     let steerY = toTargetY
 
@@ -89,14 +91,21 @@ export class Car {
       const avoid = this._avoidanceForce(others)
       const avoidLen = Math.sqrt(avoid.x * avoid.x + avoid.y * avoid.y)
       if (avoidLen > 0.001) {
-        // Blend: mostly target direction, plus lateral avoidance push
         steerX += avoid.x * 2.5
         steerY += avoid.y * 2.5
         avoiding = true
       }
     }
 
-    const desiredHeading = Math.atan2(steerY, steerX)
+    let desiredHeading = Math.atan2(steerY, steerX)
+
+    // Clamp avoidance deflection: never steer more than 30° away from
+    // the direct-to-target heading, so avoidance can't cause full orbits
+    const maxDeflection = 15 * DEG
+    const deflection = angleDiff(targetHeading, desiredHeading)
+    if (Math.abs(deflection) > maxDeflection) {
+      desiredHeading = targetHeading + Math.sign(deflection) * maxDeflection
+    }
     const headingError = angleDiff(this.heading, desiredHeading)
 
     // Drive steering toward desired, clamped to maxSteering
