@@ -12,7 +12,7 @@ const DEFAULTS = {
   brakeDecel: 480,     // px/s²
   maxSteering: 35,     // degrees
   steeringRate: 120,   // degrees/s — how fast the wheel turns
-  arrivalRadius: 55,   // px — must be > min turning radius (wheelbase/tan(maxSteering) ≈ 46)
+  arrivalRadius: 48 * 3, // 3× car width — must be > min turning radius (≈ 46px)
   skidThreshold: 150,  // px/s — speed above which arrival triggers a skid
   color: '#e63946',
 }
@@ -72,8 +72,10 @@ export class Car {
     const realDist = Math.sqrt(realDx * realDx + realDy * realDy)
 
     // --- Speed control ---
+    // Brake based on stopping distance only — the large arrival radius
+    // is just for parking, not for triggering early deceleration
     const brakingDist = (this.speed * this.speed) / (2 * this.brakeDecel)
-    const shouldBrake = realDist < this.arrivalRadius + brakingDist
+    const shouldBrake = realDist < brakingDist * 1.2
 
     // Always steer toward the real target, but blend in avoidance as a
     // lateral bias while cruising. This way the car curves around others
@@ -87,7 +89,8 @@ export class Car {
     let steerY = toTargetY
 
     let avoiding = false
-    if (!shouldBrake) {
+    const insideArrival = realDist < this.arrivalRadius
+    if (!shouldBrake && !insideArrival) {
       const avoid = this._avoidanceForce(others)
       const avoidLen = Math.sqrt(avoid.x * avoid.x + avoid.y * avoid.y)
       if (avoidLen > 0.001) {
@@ -197,7 +200,7 @@ export class Car {
    * Used as a steering bias, NOT a target offset.
    */
   _avoidanceForce(others) {
-    const radius = this.width * 1.2
+    const radius = this.width * 0.5
     let fx = 0
     let fy = 0
 

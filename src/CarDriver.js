@@ -59,50 +59,68 @@ export class CarDriver {
 
   /**
    * Drive all cars toward (x, y), scattering their individual targets
-   * along a "finish line" perpendicular to the average approach direction.
+   * in a random circular pattern around the click point.
    */
   driveTo(x, y) {
     const n = this.cars.length
     if (n === 0) return
 
-    if (n === 1) {
-      this.cars[0].driveTo(x, y)
-      return
-    }
+    // Scatter radius scales with car count so they have room
+    const carW = this.cars[0].width
+    const scatterRadius = carW * (1 + n * 0.5)
+    const minSeparation = carW * 1.5
 
-    // Compute centroid of all cars → average approach direction
-    let cx = 0, cy = 0
-    for (const car of this.cars) { cx += car.x; cy += car.y }
-    cx /= n; cy /= n
-
-    const dx = x - cx
-    const dy = y - cy
-    const dist = Math.sqrt(dx * dx + dy * dy)
-
-    // Perpendicular unit vector (the "finish line" axis)
-    let px, py
-    if (dist < 1) {
-      px = 1; py = 0 // arbitrary if cars are already on the target
-    } else {
-      px = -dy / dist
-      py = dx / dist
-    }
-
-    // Spread cars along the perpendicular, centered on the click point.
-    // Width is purely a function of car count, not distance.
-    const spacing = this.cars[0].width * 1.5
-    const totalWidth = (n - 1) * spacing
+    // Generate well-spaced targets via rejection sampling
+    const targets = []
+    const maxAttempts = 200
     for (let i = 0; i < n; i++) {
-      const offset = -totalWidth / 2 + i * spacing
-      this.cars[i].driveTo(x + px * offset, y + py * offset)
+      let placed = false
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const angle = Math.random() * Math.PI * 2
+        const r = Math.random() * scatterRadius
+        const tx = x + Math.cos(angle) * r
+        const ty = y + Math.sin(angle) * r
+
+        // Check minimum distance from all already-placed targets
+        let tooClose = false
+        for (const t of targets) {
+          const dx = tx - t.x
+          const dy = ty - t.y
+          if (dx * dx + dy * dy < minSeparation * minSeparation) {
+            tooClose = true
+            break
+          }
+        }
+        if (!tooClose) {
+          targets.push({ x: tx, y: ty })
+          placed = true
+          break
+        }
+      }
+      // Fallback: if rejection sampling exhausts attempts, place anyway
+      if (!placed) {
+        const angle = Math.random() * Math.PI * 2
+        const r = Math.random() * scatterRadius
+        targets.push({ x: x + Math.cos(angle) * r, y: y + Math.sin(angle) * r })
+      }
     }
 
-    // Store finish line for debug rendering
-    const half = totalWidth / 2
-    this._finishLine = {
-      x1: x - px * half, y1: y - py * half,
-      x2: x + px * half, y2: y + py * half,
+    // Sort targets by distance from center (furthest first)
+    targets.sort((a, b) => {
+      const da = (a.x - x) ** 2 + (a.y - y) ** 2
+      const db = (b.x - x) ** 2 + (b.y - y) ** 2
+      return db - da
+    })
+
+    // Sort cars by maxSpeed (fastest first) — fastest car gets furthest target
+    const sorted = [...this.cars].sort((a, b) => b.maxSpeed - a.maxSpeed)
+    for (let i = 0; i < n; i++) {
+      sorted[i].driveTo(targets[i].x, targets[i].y)
     }
+
+    // Store scatter zone for debug rendering
+    this._scatterZone = { x, y, radius: scatterRadius }
+    this._finishLine = null
   }
 
   /**
@@ -161,17 +179,33 @@ export class CarDriver {
   }
 
   _renderDebug(ctx) {
-    // Finish line
-    if (this._finishLine) {
-      const fl = this._finishLine
+    // Scatter zone circle
+    if (this._scatterZone) {
+      const sz = this._scatterZone
       ctx.beginPath()
-      ctx.moveTo(fl.x1, fl.y1)
-      ctx.lineTo(fl.x2, fl.y2)
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)'
-      ctx.lineWidth = 2
+      ctx.arc(sz.x, sz.y, sz.radius, 0, Math.PI * 2)
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)'
+      ctx.lineWidth = 1
       ctx.setLineDash([6, 4])
       ctx.stroke()
       ctx.setLineDash([])
+      // Center dot
+      ctx.beginPath()
+      ctx.arc(sz.x, sz.y, 3, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'
+      ctx.fill()
+    }
+
+    // Per-car: avoidance radius (shaded circle around the car itself)
+    for (const car of this.cars) {
+      const avoidR = car.width * 0.5
+      ctx.beginPath()
+      ctx.arc(car.x, car.y, avoidR, 0, Math.PI * 2)
+      ctx.fillStyle = car.color + '15'
+      ctx.fill()
+      ctx.strokeStyle = car.color + '33'
+      ctx.lineWidth = 1
+      ctx.stroke()
     }
 
     // Per-car: target crosshair + line from car to target
