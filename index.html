@@ -87,21 +87,11 @@
 <body>
 
 <div class="page">
-  <h1>Flat-Out Racing</h1>
+  <h1>Misbehaved Race Cars</h1>
   <p>
     Click anywhere on the page and watch the cars race to your cursor.
     The cars use a realistic rear-axle bicycle model — they steer, accelerate,
     brake, and drift when stopping at speed.
-  </p>
-
-  <hr />
-
-  <h2>The Grid</h2>
-  <p>
-    Five cars, five different lines into the first corner.
-    In the margins, you'll notice them jostling for position —
-    they avoid each other using a simple separation force so they
-    never quite collide, but they always race.
   </p>
 
   <h2>Programmatic API</h2>
@@ -114,13 +104,161 @@
 
   <hr />
 
-  <h2>About the physics</h2>
+  <h2>Steering — the bicycle model</h2>
   <p>
-    The steering model places the pivot point at the rear axle: the front
-    wheels turn up to 35°, and the car rotates according to
-    <em>ω = (v / L) · tan(δ)</em>, where <em>v</em> is speed, <em>L</em>
-    the wheelbase, and <em>δ</em> the steering angle. Braking distance is
-    computed from kinematics so the cars always stop exactly on target.
+    Each car is a <em>kinematic rear-axle bicycle model</em>: the two rear
+    wheels are collapsed into a single pivot point, and only the front axle
+    steers. The heading changes at a rate determined by vehicle speed, wheelbase,
+    and steering angle:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    ω = (v / L) · tan(δ)
+  </p>
+  <p>
+    where <em>v</em> is speed in px/s, <em>L</em> is the wheelbase (32 px),
+    and <em>δ</em> is the front steering angle (clamped to ±35°). Each frame
+    the heading is updated by <em>ω · dt</em>, then the rear axle moves
+    forward along the new heading. There is no lateral slip — the rear wheels
+    always track exactly along the heading vector.
+  </p>
+
+  <h2>Speed &amp; alignment scaling</h2>
+  <p>
+    A car pointing away from its target would overshoot if it ran at full
+    speed, so target speed is scaled by how well the car is aligned:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    v<sub>eff</sub> = v<sub>max</sub> · clamp(floor + (1 − floor) · cos(θ<sub>err</sub>), floor, 1)
+  </p>
+  <p>
+    The floor is normally 0.3 (so even a fully sideways car keeps 30% speed to
+    help it turn), but rises to 0.7 during an active collision so the car is
+    never artificially slowed by a heading knocked out of alignment by a bump.
+  </p>
+
+  <h2>Braking &amp; arrival</h2>
+  <p>
+    Deceleration is fixed at 480 px/s². From those kinematics the stopping
+    distance at any given speed is:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    d<sub>stop</sub> = v² / (2 · a<sub>brake</sub>)
+  </p>
+  <p>
+    The car begins braking when its distance to the target falls inside
+    <em>d<sub>stop</sub> × 1.2</em> — the 20% margin absorbs the fact that
+    the car is still turning while decelerating. Once inside the
+    <em>arrival radius</em> (default 144 px, adjustable via the slider),
+    steering and avoidance cut out entirely and the car brakes to a dead stop.
+    Speed below 10 px/s clears the target.
+  </p>
+
+  <h2>Orbit detection &amp; escape</h2>
+  <p>
+    A car near its target can sometimes end up circling indefinitely —
+    particularly one with a wide turning radius arriving at an awkward angle.
+    To detect this, cumulative angular displacement is tracked whenever the
+    car is within <em>5 × width</em> of the target:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    Σ|ω · dt| &gt; 2π → orbiting = true
+  </p>
+  <p>
+    Once flagged, the car brakes at 60% of normal deceleration until it stops,
+    then clears its target. The accumulator resets whenever the car leaves the
+    near-finish zone.
+  </p>
+
+  <h2>Collision resolution</h2>
+  <p>
+    After every update tick, each overlapping pair of cars is hard-separated
+    along the axis between their centres by exactly the overlap distance:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    a.pos -= n̂ · overlap/2 &nbsp;&nbsp; b.pos += n̂ · overlap/2
+  </p>
+  <p>
+    A rotational impulse is also applied proportional to the cross product of
+    the push direction and each car's forward axis — a side-on hit spins the
+    car, a head-on hit doesn't. Moving cars receive 15% of the torque that a
+    parked car would, keeping the fleet from spinning wildly mid-race.
+  </p>
+
+  <h2>Proximity boost</h2>
+  <p>
+    When two cars are within 1.5 car-widths of each other, the one that is
+    <em>closer to its target</em> (the lead car) receives a forward speed
+    boost to pull it clear:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    boost = urgency × (0.7 if colliding, else 0.3)
+  </p>
+  <p>
+    where <em>urgency</em> scales linearly from 0 at 1.5 widths to 1 at
+    contact. The trailing car is never slowed — this is a push-forward, not a
+    push-back. The higher multiplier during an active collision ensures the lead
+    car escapes cleanly rather than being dragged along.
+  </p>
+
+  <h2>Avoidance steering</h2>
+  <p>
+    While not braking or inside the arrival zone, each car computes a repulsion
+    vector from neighbours within 0.66 × car-width:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    f = Σ (n̂<sub>away</sub> · strength) &nbsp; where strength = (r<sub>min</sub> − d) / r<sub>min</sub>
+  </p>
+  <p>
+    This force is blended into the desired heading with a weight of 2.5, then
+    the steering rate clamps the actual wheel movement to ±120°/s so the car
+    can never snap direction instantly.
+  </p>
+
+  <h2>Bézier paths</h2>
+  <p>
+    When a target is assigned, a cubic Bézier curve is generated from the car's
+    current position to the destination. The two control points are offset
+    perpendicular to the straight line by random amounts (up to 60% and 40% of
+    the distance respectively), producing arcs and S-curves. The car tracks a
+    lookahead point 8% ahead of its current progress along the curve, giving
+    smooth anticipatory steering rather than reactive correction.
+  </p>
+
+  <h2>Target scatter &amp; assignment</h2>
+  <p>
+    Clicking the page doesn't send all cars to the same point — targets are
+    scattered around the click within a radius that grows with car count.
+    Points are placed via rejection sampling with a minimum separation of 1.5
+    car-widths, so targets never stack on top of each other. Cars are then
+    sorted by <em>maxSpeed</em> and assigned targets sorted by distance from
+    centre — fastest car gets the furthest target, so the fleet fans out rather
+    than converging.
+  </p>
+
+  <h2>Skidmarks</h2>
+  <p>
+    Four types of skidmark are classified each frame, in priority order:
+  </p>
+  <p>
+    <strong style="color:#ff1493">Stop</strong> — braking at speed above 150 px/s.
+    Both rear tyres, always solid.<br />
+    <strong style="color:#663399">Accel</strong> — wheel-spin on launch while
+    actually gaining speed (10–100 px/s). Opacity scales as
+    <em>1 − (v − 10) / 90</em> — darkest at launch, invisible at 100 px/s.<br />
+    <strong style="color:#00cccc">Turn</strong> — steering above 65% of full
+    lock at over 100 px/s. Opacity is proportional to lock angle. The inner
+    tyre (lighter load) starts and ends 10 frames later/earlier than the outer,
+    giving a naturally shorter inner streak with no gaps, and renders at 50%
+    opacity of the outer.<br />
+    <strong style="color:#ff6600">Bump</strong> — a nearly-stopped car
+    nudged by a collision. All four wheels, always solid.
+  </p>
+  <p>
+    Each skid <em>event</em> (when a type first activates) flips a coin —
+    50% chance no marks are produced at all, giving the organic variation you
+    see on a real track surface. Marks are drawn once to a dedicated persistent
+    canvas behind the cars and never redrawn, so they accumulate indefinitely
+    at zero per-frame cost.
   </p>
 </div>
 
@@ -138,7 +276,34 @@
 <script type="module">
   import { CarDriver } from './src/index.js'
 
-  const driver = new CarDriver({ count: 4 })
+  const driver = new CarDriver({
+    count: 0, 
+    skidOpacity: 0.08
+  })
+
+  // Audi
+  driver.addCar({
+    color: '#ffffff',
+    maxSteering: 20,
+    steeringRate: 80,
+    acceleration: 240,
+  })
+  driver.addCar({
+    color: '#ffffff',
+    maxSteering: 20,
+    steeringRate: 90,
+    acceleration: 240,
+  })
+  
+  // Nissan
+  driver.addCar({
+    color: '#0000ff',
+    maxSpeed: 500,
+    acceleration: 200,
+    maxSteering: 35,
+    steeringRate: 150,
+  })
+  
 
   // Expose for console experimentation
   window.driver = driver

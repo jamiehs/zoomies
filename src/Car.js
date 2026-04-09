@@ -40,6 +40,8 @@ export class Car {
     this.color = cfg.color
 
     this.target = null  // { x, y }
+    this.orbitDetection = true
+    this.proximityBoost = true
     this._skidding = false
     this._cumulativeRotation = 0  // tracks total rotation for orbit detection
     this._orbiting = false        // true when braking out of an orbit
@@ -198,22 +200,24 @@ export class Car {
     // (closer to target) gets a speed boost to pull away; the trailing
     // car maintains its current speed. Neither slows down.
     let proximityBoost = 0
-    for (const other of others) {
-      if (other === this) continue
-      const dx = this.x - other.x
-      const dy = this.y - other.y
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      const safetyDist = this.width * 1.5
-      if (dist < safetyDist) {
-        const myDist = realDist
-        const otherDx = (other.target ? other.target.x : other.x) - other.x
-        const otherDy = (other.target ? other.target.y : other.y) - other.y
-        const otherDist = Math.sqrt(otherDx * otherDx + otherDy * otherDy)
-        if (myDist < otherDist) {
-          // We're the lead car — boost to pull away
-          const urgency = 1 - (dist / safetyDist)
-          const boostAmount = this._wasColliding ? urgency * 0.7 : urgency * 0.3
-          proximityBoost = Math.max(proximityBoost, boostAmount)
+    if (this.proximityBoost) {
+      for (const other of others) {
+        if (other === this) continue
+        const dx = this.x - other.x
+        const dy = this.y - other.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const safetyDist = this.width * 1.5
+        if (dist < safetyDist) {
+          const myDist = realDist
+          const otherDx = (other.target ? other.target.x : other.x) - other.x
+          const otherDy = (other.target ? other.target.y : other.y) - other.y
+          const otherDist = Math.sqrt(otherDx * otherDx + otherDy * otherDy)
+          if (myDist < otherDist) {
+            // We're the lead car — boost to pull away
+            const urgency = 1 - (dist / safetyDist)
+            const boostAmount = this._wasColliding ? urgency * 0.7 : urgency * 0.3
+            proximityBoost = Math.max(proximityBoost, boostAmount)
+          }
         }
       }
     }
@@ -245,21 +249,26 @@ export class Car {
     this._applyBicycleModel(dt)
 
     // Track cumulative rotation for orbit detection — only near the finish
-    const nearFinish = realDist < this.width * 5
-    if (nearFinish && this.speed > 5) {
-      const angularVel = (this.speed / this.wheelbase) * Math.tan(this.steeringAngle)
-      this._cumulativeRotation += Math.abs(angularVel * dt)
-    } else if (!nearFinish) {
+    if (this.orbitDetection) {
+      const nearFinish = realDist < this.width * 5
+      if (nearFinish && this.speed > 5) {
+        const angularVel = (this.speed / this.wheelbase) * Math.tan(this.steeringAngle)
+        this._cumulativeRotation += Math.abs(angularVel * dt)
+      } else if (!nearFinish) {
+        this._cumulativeRotation = 0
+        this._orbiting = false
+      }
+
+      if (this._cumulativeRotation > Math.PI * 2) {
+        this._orbiting = true
+        this._cumulativeRotation = 0
+      }
+    } else {
       this._cumulativeRotation = 0
       this._orbiting = false
     }
 
-    // Orbit escape: if the car has done a full rotation near the finish,
-    // it's stuck. Begin braking to a stop.
-    if (this._cumulativeRotation > Math.PI * 2) {
-      this._orbiting = true
-      this._cumulativeRotation = 0
-    }
+    // Orbit escape: brake to a stop if stuck circling
     if (this._orbiting) {
       this.speed = Math.max(0, this.speed - this.brakeDecel * 0.6 * dt)
       if (this.speed < 2) {
@@ -332,14 +341,6 @@ export class Car {
     ctx.roundRect(w / 2 - w / 3, -h / 2 + 3, w / 3 - 3, h - 6, 2)
     ctx.fillStyle = 'rgba(0,0,0,0.25)'
     ctx.fill()
-
-    // Skid indicator: darken the whole car slightly when skidding
-    if (this._skidding) {
-      ctx.beginPath()
-      ctx.roundRect(-w / 2, -h / 2, w, h, r)
-      ctx.fillStyle = 'rgba(0,0,0,0.2)'
-      ctx.fill()
-    }
 
     ctx.restore()
   }

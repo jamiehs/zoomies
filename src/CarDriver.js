@@ -21,6 +21,8 @@ export class CarDriver {
     this.cars = []
     this.debug = opts.debug ?? false
     this.skidOpacity = opts.skidOpacity ?? 0.33
+    this.orbitDetection = opts.orbitDetection ?? true
+    this.proximityBoost = opts.proximityBoost ?? true
     this._carOptions = carOptions
     this._clickTarget = clickTarget
     this._rafId = null
@@ -163,7 +165,7 @@ export class CarDriver {
       ? { accel: '102, 51, 153', turn: '0, 255, 255', stop: '255, 20, 147', bump: '255, 165, 0' }
       : { accel: '20, 15, 10',   turn: '20, 15, 10',  stop: '20, 15, 10',   bump: '20, 15, 10'  }
     this._skidCtx.lineCap = 'round'
-    this._skidCtx.lineWidth = 3
+    this._skidCtx.lineWidth = 4.5
     this._skidCtx.strokeStyle = `rgba(${COLORS[s.type]}, ${s.alpha * this.skidOpacity})`
     this._skidCtx.beginPath()
     this._skidCtx.moveTo(s.x1, s.y1)
@@ -332,8 +334,8 @@ export class CarDriver {
           // side of the car spins it; a head-on hit doesn't.
           // Moving cars get very light torque; parked cars get more.
           const baseTorque = overlap * 0.015
-          const torqueA = a.target ? baseTorque * 0.15 : baseTorque
-          const torqueB = b.target ? baseTorque * 0.15 : baseTorque
+          const torqueA = a.target ? baseTorque * 0.33 : baseTorque
+          const torqueB = b.target ? baseTorque * 0.33 : baseTorque
           const crossA = (-nx) * Math.sin(a.heading) - (-ny) * Math.cos(a.heading)
           a.heading += crossA * torqueA
           const crossB = nx * Math.sin(b.heading) - ny * Math.cos(b.heading)
@@ -381,6 +383,8 @@ export class CarDriver {
     ctx.clearRect(0, 0, this._canvas.width, this._canvas.height)
 
     for (const car of this.cars) {
+      car.orbitDetection = this.orbitDetection
+      car.proximityBoost = this.proximityBoost
       car.update(dt, this.cars)
     }
 
