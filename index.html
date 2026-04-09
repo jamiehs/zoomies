@@ -90,16 +90,61 @@
   <h1>Misbehaved Race Cars</h1>
   <p>
     Click anywhere on the page and watch the cars race to your cursor.
-    The cars use a realistic rear-axle bicycle model — they steer, accelerate,
-    brake, and drift when stopping at speed.
+    Each car uses a realistic rear-axle bicycle model — it steers, accelerates,
+    brakes, drifts, leaves skidmarks, and backfires. Press
+    <strong>Shift+Space</strong> to toggle the debug overlay.
   </p>
 
   <h2>Programmatic API</h2>
   <p>
     Open the browser console and try:
-    <br /><code style="color:#2a9d8f">driver.cars[0].driveTo(200, 200)</code> — moves only car 0
-    <br /><code style="color:#2a9d8f">driver.driveTo(400, 300)</code> — moves all cars
-    <br /><code style="color:#2a9d8f">driver.addCar({ color: '#ff0' })</code> — adds a car
+  </p>
+  <p style="font-family:monospace; font-size:0.85em; line-height:2">
+    <span style="color:#2a9d8f">driver.driveTo(400, 300)</span> — moves all cars<br />
+    <span style="color:#2a9d8f">driver.cars[0].driveTo(200, 200)</span> — moves only car 0<br />
+    <span style="color:#2a9d8f">driver.addCar({ color: '#ff0', maxSpeed: 600 })</span> — adds a car<br />
+    <span style="color:#2a9d8f">driver.removeCar(driver.cars[0])</span> — removes a car<br />
+    <span style="color:#2a9d8f">driver.debug = true</span> — toggle debug overlay<br />
+    <span style="color:#2a9d8f">driver.skidOpacity = 0.15</span> — adjust skidmark darkness<br />
+    <span style="color:#2a9d8f">driver.shadow = false</span> — disable shadows
+  </p>
+
+  <h2>Car options</h2>
+  <p>
+    Pass any of these to <code style="color:#2a9d8f">driver.addCar({ … })</code>:
+  </p>
+  <p style="font-family:monospace; font-size:0.82em; line-height:2; color:#aaa">
+    <span style="color:#e9c46a">// Physics</span><br />
+    maxSpeed: 320 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px/s (±20% random variation)<br />
+    acceleration: 220 — px/s²<br />
+    brakeDecel: 480 &nbsp;&nbsp;— px/s²<br />
+    wheelbase: 32 &nbsp;&nbsp;&nbsp;&nbsp;— px; also scales visual body length<br />
+    maxSteering: 35 &nbsp;&nbsp;— degrees of front wheel travel<br />
+    steeringRate: 120 — degrees/s the wheel can turn<br />
+    arrivalRadius: 144 — px; brake-to-stop zone around target<br />
+    <br />
+    <span style="color:#e9c46a">// Appearance</span><br />
+    color: '#e63946' &nbsp;— any CSS color<br />
+    height: 24 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— body height in px<br />
+    tireWidth: 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— skidmark line width in px<br />
+    sprite: null &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— URL string or HTMLImageElement<br />
+    <br />
+    <span style="color:#e9c46a">// Exhaust afterfire</span><br />
+    exhaustPosition: null &nbsp;&nbsp;— 'left' | 'right' | 'bothSides' | 'rear'<br />
+    exhaustOffset: 0.5 &nbsp;&nbsp;&nbsp;&nbsp;— 0–1 along the chosen edge<br />
+    exhaustRadius: 6 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— flash circle radius in px<br />
+    exhaustInterval: 2.2 &nbsp;&nbsp;— min seconds between flashes (actual = interval × 1–2×)
+  </p>
+
+  <h2>CarDriver options</h2>
+  <p style="font-family:monospace; font-size:0.82em; line-height:2; color:#aaa">
+    count: 3 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— cars spawned on init<br />
+    skidOpacity: 0.08 &nbsp;&nbsp;— global skidmark opacity multiplier<br />
+    shadow: true<br />
+    shadowOpacity: 0.40<br />
+    shadowBlur: 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px<br />
+    shadowOffsetX: 4 &nbsp;&nbsp;&nbsp;— page-space offset (not car-space)<br />
+    shadowOffsetY: 6
   </p>
 
   <hr />
@@ -115,11 +160,22 @@
     ω = (v / L) · tan(δ)
   </p>
   <p>
-    where <em>v</em> is speed in px/s, <em>L</em> is the wheelbase (32 px),
-    and <em>δ</em> is the front steering angle (clamped to ±35°). Each frame
-    the heading is updated by <em>ω · dt</em>, then the rear axle moves
+    where <em>v</em> is speed in px/s, <em>L</em> is the wheelbase, and
+    <em>δ</em> is the front steering angle (clamped to ±maxSteering°). Each
+    frame the heading is updated by <em>ω · dt</em>, then the rear axle moves
     forward along the new heading. There is no lateral slip — the rear wheels
-    always track exactly along the heading vector.
+    always track exactly along the heading vector. The visual body length is
+    derived as <em>wheelbase × 1.5</em> unless overridden.
+  </p>
+
+  <h2>Bézier paths</h2>
+  <p>
+    When a target is assigned, a cubic Bézier curve is generated from the car's
+    current position to the destination. The two control points are offset
+    perpendicular to the straight line by random amounts (up to 60% and 40% of
+    the distance respectively), producing arcs and S-curves. The car tracks a
+    lookahead point 8% ahead of its current progress along the curve, giving
+    smooth anticipatory steering rather than reactive correction.
   </p>
 
   <h2>Speed &amp; alignment scaling</h2>
@@ -214,16 +270,6 @@
     can never snap direction instantly.
   </p>
 
-  <h2>Bézier paths</h2>
-  <p>
-    When a target is assigned, a cubic Bézier curve is generated from the car's
-    current position to the destination. The two control points are offset
-    perpendicular to the straight line by random amounts (up to 60% and 40% of
-    the distance respectively), producing arcs and S-curves. The car tracks a
-    lookahead point 8% ahead of its current progress along the curve, giving
-    smooth anticipatory steering rather than reactive correction.
-  </p>
-
   <h2>Target scatter &amp; assignment</h2>
   <p>
     Clicking the page doesn't send all cars to the same point — targets are
@@ -237,28 +283,59 @@
 
   <h2>Skidmarks</h2>
   <p>
-    Four types of skidmark are classified each frame, in priority order:
+    Four types of skidmark are classified each frame, in priority order.
+    Each type activates a 50/50 coin flip per event — half of all skid events
+    produce no marks at all, giving the organic variation you see on a real
+    track surface.
   </p>
   <p>
-    <strong style="color:#ff1493">Stop</strong> — braking at speed above 150 px/s.
-    Both rear tyres, always solid.<br />
+    <strong style="color:#ff1493">Stop</strong> — braking above 150 px/s.
+    Both rear tyres, full opacity.<br />
     <strong style="color:#663399">Accel</strong> — wheel-spin on launch while
     actually gaining speed (10–100 px/s). Opacity scales as
     <em>1 − (v − 10) / 90</em> — darkest at launch, invisible at 100 px/s.<br />
     <strong style="color:#00cccc">Turn</strong> — steering above 65% of full
-    lock at over 100 px/s. Opacity is proportional to lock angle. The inner
-    tyre (lighter load) starts and ends 10 frames later/earlier than the outer,
-    giving a naturally shorter inner streak with no gaps, and renders at 50%
-    opacity of the outer.<br />
-    <strong style="color:#ff6600">Bump</strong> — a nearly-stopped car
-    nudged by a collision. All four wheels, always solid.
+    lock at over 100 px/s. Opacity is proportional to lock angle (lightened).
+    The inner tyre starts 10 frames later and ends 10 frames earlier than the
+    outer — a naturally shorter inner streak with no gaps — and renders at 20%
+    of the outer's opacity.<br />
+    <strong style="color:#ff6600">Bump</strong> — a nearly-stopped car nudged
+    by a collision. All four wheels, half opacity.
   </p>
   <p>
-    Each skid <em>event</em> (when a type first activates) flips a coin —
-    50% chance no marks are produced at all, giving the organic variation you
-    see on a real track surface. Marks are drawn once to a dedicated persistent
-    canvas behind the cars and never redrawn, so they accumulate indefinitely
-    at zero per-frame cost.
+    Marks are drawn once to a dedicated persistent canvas behind the cars and
+    never redrawn, so they accumulate indefinitely at zero per-frame cost.
+    The global <em>skidOpacity</em> multiplier scales all marks uniformly;
+    in debug mode it is bypassed so individual baked alphas are visible.
+    The <em>tireWidth</em> per car controls the line width of its marks.
+  </p>
+
+  <h2>Shadows</h2>
+  <p>
+    Each car casts a soft blurred shadow drawn in a separate canvas transform
+    before the body, so the offset is in <em>page-space</em> — not car-local
+    space. A car rotated 180° still casts its shadow in the same screen
+    direction, simulating a fixed overhead light source. Set
+    <code style="color:#2a9d8f">shadowOffsetX: 0, shadowOffsetY: 0</code>
+    for a shadow directly underneath with no directional component.
+  </p>
+
+  <h2>Sprites &amp; exhaust</h2>
+  <p>
+    Any car can display a sprite image instead of the default colored rectangle.
+    Pass a URL string or an <code>HTMLImageElement</code> as <code>sprite</code>;
+    the image is drawn with high-quality smoothing enabled so it stays crisp at
+    any rotation. The shadow and exhaust flash render on top of the sprite
+    regardless.
+  </p>
+  <p>
+    When <code>exhaustPosition</code> is set, a brief yellow circle fires at
+    the specified location every 3–6 seconds while the car is moving above
+    50 px/s — a 5-frame animation at opacities [0.5, 1.0, 1.0, 0.66, 0.33].
+    The position is specified in car-local space:
+    <code>'rear'</code>, <code>'left'</code>, <code>'right'</code>, or
+    <code>'bothSides'</code>, with <code>exhaustOffset</code> controlling where
+    along that edge the flash appears.
   </p>
 </div>
 
@@ -277,31 +354,47 @@
   import { CarDriver } from './src/index.js'
 
   const driver = new CarDriver({
-    count: 0, 
-    skidOpacity: 0.08
-  })
-
-  // Audi
-  driver.addCar({
-    color: '#ffffff',
-    maxSteering: 20,
-    steeringRate: 80,
-    acceleration: 240,
-  })
-  driver.addCar({
-    color: '#ffffff',
-    maxSteering: 20,
-    steeringRate: 90,
-    acceleration: 240,
+    count: 0, // add the cars manually below
+    skidOpacity: 0.019
   })
   
+  // Audi
+  driver.addCar({
+    color: 'rgb(193, 16, 16)',
+    maxSteering: 20,
+    steeringRate: 80,
+    acceleration: 190,
+    tireWidth: 7,
+    exhaustPosition: 'right',
+    exhaustOffset: 0.38,
+    exhaustRadius: 5,
+    sprite: './public/a901.png'
+  })
+  driver.addCar({
+    color: 'rgb(201, 176, 32)',
+    maxSteering: 25,
+    steeringRate: 90,
+    acceleration: 200,
+    tireWidth: 7,
+    exhaustPosition: 'right',
+    exhaustOffset: 0.38,
+    exhaustRadius: 5,
+    sprite: './public/a9037.png'
+  })
+
   // Nissan
   driver.addCar({
     color: '#0000ff',
-    maxSpeed: 500,
+    maxSpeed: 650,
     acceleration: 200,
     maxSteering: 35,
     steeringRate: 150,
+    wheelbase: 40,
+    tireWidth: 6,
+    exhaustPosition: 'rear',
+    exhaustOffset: 0.6,
+    exhaustRadius: 4,
+    sprite: './public/zxt.png'
   })
   
 

@@ -21,6 +21,11 @@ export class CarDriver {
     this.cars = []
     this.debug = opts.debug ?? false
     this.skidOpacity = opts.skidOpacity ?? 0.33
+    this.shadow = opts.shadow ?? true
+    this.shadowOpacity = opts.shadowOpacity ?? 0.40
+    this.shadowBlur = opts.shadowBlur ?? 4
+    this.shadowOffsetX = opts.shadowOffsetX ?? 4
+    this.shadowOffsetY = opts.shadowOffsetY ?? 6
     this.orbitDetection = opts.orbitDetection ?? true
     this.proximityBoost = opts.proximityBoost ?? true
     this._carOptions = carOptions
@@ -161,12 +166,16 @@ export class CarDriver {
   }
 
   _drawSkidSegment(s) {
+    const turnColor = this.debug
+      ? (s.isInner ? '0, 160, 160' : '0, 255, 255')
+      : '20, 15, 10'
     const COLORS = this.debug
-      ? { accel: '102, 51, 153', turn: '0, 255, 255', stop: '255, 20, 147', bump: '255, 165, 0' }
+      ? { accel: '102, 51, 153', turn: turnColor, stop: '255, 20, 147', bump: '255, 165, 0' }
       : { accel: '20, 15, 10',   turn: '20, 15, 10',  stop: '20, 15, 10',   bump: '20, 15, 10'  }
     this._skidCtx.lineCap = 'round'
-    this._skidCtx.lineWidth = 4.5
-    this._skidCtx.strokeStyle = `rgba(${COLORS[s.type]}, ${s.alpha * this.skidOpacity})`
+    this._skidCtx.lineWidth = s.tw ?? 4
+    const finalAlpha = this.debug ? s.alpha : s.alpha * this.skidOpacity
+    this._skidCtx.strokeStyle = `rgba(${COLORS[s.type]}, ${finalAlpha})`
     this._skidCtx.beginPath()
     this._skidCtx.moveTo(s.x1, s.y1)
     this._skidCtx.lineTo(s.x2, s.y2)
@@ -232,17 +241,19 @@ export class CarDriver {
     const lx = rlx, ly = rly, rx = rrx, ry = rry
 
     // Alpha baked at emit time — persistent canvas means no global i/n position
-    const solidAlpha = 0.75
-    const accelAlpha = Math.max(0, 1 - (car.speed - 10) / 90)                // solid at launch → 0 at 100px/s
-    const turnAlpha  = (Math.abs(car.steeringAngle) / car.maxSteering) * 0.7  // proportional to steering lock
+    const solidAlpha = 1.0
+    const accelAlpha = Math.max(0, 1 - (car.speed - 10) / 90)                // 1 at launch → 0 at 100px/s
+    const turnAlpha  = (Math.abs(car.steeringAngle) / car.maxSteering) * 0.5  // proportional to steering lock, lightened
+    const bumpAlpha  = 0.5                                                     // light — nudge marks, not hard stops
+    const tw = car.tireWidth  // baked into segment for persistent canvas
 
     if (type === 'bump') {
       const prev = this._bumpPrev.get(car)
       if (prev) {
-        this._pushSkid({ x1: prev.flx, y1: prev.fly, x2: flx, y2: fly, type, alpha: solidAlpha })
-        this._pushSkid({ x1: prev.frx, y1: prev.fry, x2: frx, y2: fry, type, alpha: solidAlpha })
-        this._pushSkid({ x1: prev.rlx, y1: prev.rly, x2: rlx, y2: rly, type, alpha: solidAlpha })
-        this._pushSkid({ x1: prev.rrx, y1: prev.rry, x2: rrx, y2: rry, type, alpha: solidAlpha })
+        this._pushSkid({ x1: prev.flx, y1: prev.fly, x2: flx, y2: fly, type, alpha: bumpAlpha, tw })
+        this._pushSkid({ x1: prev.frx, y1: prev.fry, x2: frx, y2: fry, type, alpha: bumpAlpha, tw })
+        this._pushSkid({ x1: prev.rlx, y1: prev.rly, x2: rlx, y2: rly, type, alpha: bumpAlpha, tw })
+        this._pushSkid({ x1: prev.rrx, y1: prev.rry, x2: rrx, y2: rry, type, alpha: bumpAlpha, tw })
       }
       this._bumpPrev.set(car, { flx, fly, frx, fry, rlx, rly, rrx, rry })
       this._stopAccelPrev.delete(car)
@@ -252,8 +263,8 @@ export class CarDriver {
       const alpha = type === 'stop' ? solidAlpha : accelAlpha
       const prev = this._stopAccelPrev.get(car)
       if (prev) {
-        this._pushSkid({ x1: prev.lx, y1: prev.ly, x2: lx, y2: ly, type, alpha })
-        this._pushSkid({ x1: prev.rx, y1: prev.ry, x2: rx, y2: ry, type, alpha })
+        this._pushSkid({ x1: prev.lx, y1: prev.ly, x2: lx, y2: ly, type, alpha, tw })
+        this._pushSkid({ x1: prev.rx, y1: prev.ry, x2: rx, y2: ry, type, alpha, tw })
       }
       this._stopAccelPrev.set(car, { lx, ly, rx, ry })
       this._clearTurnState(car)
@@ -271,7 +282,7 @@ export class CarDriver {
       // Outer track — emit immediately with steering-proportional alpha
       const outerPrev = this._turnOuterPrev.get(car)
       if (outerPrev) {
-        this._pushSkid({ x1: outerPrev.x, y1: outerPrev.y, x2: ox, y2: oy, type, streakId, isInner: false, alpha: turnAlpha })
+        this._pushSkid({ x1: outerPrev.x, y1: outerPrev.y, x2: ox, y2: oy, type, streakId, isInner: false, alpha: turnAlpha, tw })
       }
       this._turnOuterPrev.set(car, { x: ox, y: oy })
 
@@ -283,9 +294,9 @@ export class CarDriver {
       if (queue.length > D) {
         const current = queue.shift()
         const delayedPrev = this._turnInnerDelayedPrev.get(car)
-        const innerAlpha = (Math.abs(current.steerAngle) / car.maxSteering) * 0.7 * 0.5
+        const innerAlpha = (Math.abs(current.steerAngle) / car.maxSteering) * 0.2
         if (delayedPrev) {
-          this._pushSkid({ x1: delayedPrev.x, y1: delayedPrev.y, x2: current.x, y2: current.y, type, streakId, isInner: true, alpha: innerAlpha })
+          this._pushSkid({ x1: delayedPrev.x, y1: delayedPrev.y, x2: current.x, y2: current.y, type, streakId, isInner: true, alpha: innerAlpha, tw })
         }
         this._turnInnerDelayedPrev.set(car, current)
       }
@@ -409,7 +420,7 @@ export class CarDriver {
     }
 
     for (const car of this.cars) {
-      car.render(ctx)
+      car.render(ctx, { shadow: this.shadow, shadowOpacity: this.shadowOpacity, shadowBlur: this.shadowBlur, shadowOffsetX: this.shadowOffsetX, shadowOffsetY: this.shadowOffsetY })
     }
 
     if (this.debug) this._renderDebug(ctx)
@@ -439,20 +450,23 @@ export class CarDriver {
     for (const car of this.cars) {
       if (!car.path) continue
       const { p0, p1, p2, p3 } = car.path
+      ctx.strokeStyle = car.color
+      ctx.lineWidth = 2
+      ctx.globalAlpha = 0.27
       ctx.beginPath()
       ctx.moveTo(p0.x, p0.y)
       ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)
-      ctx.strokeStyle = car.color + '44'
-      ctx.lineWidth = 2
       ctx.stroke()
 
       // Show control points as small dots
+      ctx.fillStyle = car.color
+      ctx.globalAlpha = 0.40
       for (const cp of [p1, p2]) {
         ctx.beginPath()
         ctx.arc(cp.x, cp.y, 3, 0, Math.PI * 2)
-        ctx.fillStyle = car.color + '66'
         ctx.fill()
       }
+      ctx.globalAlpha = 1
     }
 
     // Per-car: avoidance radius, active-avoidance highlight, desired heading
@@ -460,11 +474,14 @@ export class CarDriver {
       const avoidR = car.width * 0.66
       ctx.beginPath()
       ctx.arc(car.x, car.y, avoidR, 0, Math.PI * 2)
-      ctx.fillStyle = car.color + '15'
+      ctx.fillStyle = car.color
+      ctx.globalAlpha = 0.08
       ctx.fill()
-      ctx.strokeStyle = car.color + '33'
+      ctx.strokeStyle = car.color
+      ctx.globalAlpha = 0.20
       ctx.lineWidth = 1
       ctx.stroke()
+      ctx.globalAlpha = 1
 
       // Highlight: rectangle outline around car when actively avoiding
       if (car._debugAvoiding) {
@@ -495,6 +512,24 @@ export class CarDriver {
           ctx.setLineDash([])
           ctx.restore()
         }
+      }
+
+      // Exhaust position crosshair(s) — shown in car-local space
+      if (car.exhaustPosition) {
+        ctx.save()
+        ctx.translate(car.x, car.y)
+        ctx.rotate(car.heading)
+        const pts = car._exhaustPositions(car.width, car.height)
+        const cs = 5  // crosshair arm length
+        ctx.strokeStyle = 'rgba(255, 220, 0, 0.9)'
+        ctx.lineWidth = 1.5
+        for (const p of pts) {
+          ctx.beginPath()
+          ctx.moveTo(p.x - cs, p.y); ctx.lineTo(p.x + cs, p.y)
+          ctx.moveTo(p.x, p.y - cs); ctx.lineTo(p.x, p.y + cs)
+          ctx.stroke()
+        }
+        ctx.restore()
       }
 
       // Desired heading: line from car center showing where it wants to go
@@ -569,9 +604,11 @@ export class CarDriver {
       // Small circle at target showing arrival radius
       ctx.beginPath()
       ctx.arc(tx, ty, car.arrivalRadius, 0, Math.PI * 2)
-      ctx.strokeStyle = car.color + '44'
+      ctx.strokeStyle = car.color
+      ctx.globalAlpha = 0.27
       ctx.lineWidth = 1
       ctx.stroke()
+      ctx.globalAlpha = 1
     }
   }
 

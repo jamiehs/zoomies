@@ -4,17 +4,25 @@ const DEG = Math.PI / 180
 
 // Physics defaults — all tunable via constructor options.
 const DEFAULTS = {
-  width: 48,
+  // width is intentionally absent — derived as wheelbase * 1.5 unless explicitly set
   height: 24,
-  wheelbase: 32,       // px — distance between axles
-  maxSpeed: 320,       // px/s
-  acceleration: 220,   // px/s²
-  brakeDecel: 480,     // px/s²
-  maxSteering: 35,     // degrees
-  steeringRate: 120,   // degrees/s — how fast the wheel turns
+  wheelbase: 32,         // px — distance between axles; also drives visual body length
+  tireWidth: 4,          // px — skidmark line width
+  maxSpeed: 320,         // px/s
+  acceleration: 220,     // px/s²
+  brakeDecel: 480,       // px/s²
+  maxSteering: 35,       // degrees
+  steeringRate: 120,     // degrees/s — how fast the wheel turns
   arrivalRadius: 144,    // ~3× car width — must be > min turning radius (≈ 46px)
-  skidThreshold: 150,  // px/s — speed above which arrival triggers a skid
+  skidThreshold: 150,    // px/s — speed above which arrival triggers a skid
   color: '#e63946',
+  // Exhaust afterfire flash
+  exhaustPosition: null, // 'left' | 'right' | 'bothSides' | 'rear'
+  exhaustOffset: 0.5,    // 0–1 along the chosen edge (see _exhaustPositions)
+  exhaustRadius: 6,      // px — radius of each exhaust flash circle
+  exhaustInterval: 2.2,  // seconds — minimum time between flashes; actual interval is exhaustInterval × (1 + random)
+  // Sprite: URL string or HTMLImageElement; null = draw rectangle body
+  sprite: null,
 }
 
 export class Car {
@@ -27,9 +35,10 @@ export class Car {
     this.speed = 0
     this.steeringAngle = 0   // radians; positive = turn left
 
-    this.width = cfg.width
-    this.height = cfg.height
     this.wheelbase = cfg.wheelbase
+    this.width = cfg.width ?? this.wheelbase * 1.5  // body length derived from wheelbase
+    this.height = cfg.height
+    this.tireWidth = cfg.tireWidth
     this.maxSpeed = cfg.maxSpeed * (0.8 + Math.random() * 0.4)  // ±20% variation
     this.acceleration = cfg.acceleration
     this.brakeDecel = cfg.brakeDecel
@@ -38,6 +47,22 @@ export class Car {
     this.arrivalRadius = cfg.arrivalRadius
     this.skidThreshold = cfg.skidThreshold
     this.color = cfg.color
+
+    // Exhaust afterfire
+    this.exhaustPosition = cfg.exhaustPosition ?? null
+    this.exhaustOffset   = cfg.exhaustOffset ?? 0.5
+    this.exhaustRadius   = cfg.exhaustRadius ?? 6
+    this.exhaustInterval = cfg.exhaustInterval ?? 3
+    this._exhaustTimer = this.exhaustInterval * (1 + Math.random())  // seconds until first flash
+    this._exhaustFrame = -1  // -1 = inactive; 0–4 = animation frame index
+
+    // Sprite — accepts a URL string or an existing HTMLImageElement
+    if (typeof cfg.sprite === 'string') {
+      this.sprite = new Image()
+      this.sprite.src = cfg.sprite
+    } else {
+      this.sprite = cfg.sprite ?? null
+    }
 
     this.target = null  // { x, y }
     this.orbitDetection = true
@@ -103,6 +128,19 @@ export class Car {
    * @param {Car[]} others  All other cars for avoidance.
    */
   update(dt, others) {
+    // Exhaust afterfire — gear-shift flash, independent of driving state
+    if (this.exhaustPosition && this.speed > 50) {
+      this._exhaustTimer -= dt
+      if (this._exhaustTimer <= 0) {
+        this._exhaustFrame = 0
+        this._exhaustTimer = this.exhaustInterval * (1 + Math.random())
+      }
+    }
+    if (this._exhaustFrame >= 0) {
+      this._exhaustFrame++
+      if (this._exhaustFrame >= 5) this._exhaustFrame = -1
+    }
+
     if (!this.target) {
       // Coast to a stop
       if (this.speed > 0) {
@@ -320,28 +358,82 @@ export class Car {
     return { x: fx, y: fy }
   }
 
-  /** @param {CanvasRenderingContext2D} ctx */
-  render(ctx) {
-    ctx.save()
-    ctx.translate(this.x, this.y)
-    ctx.rotate(this.heading)
-
+  /** @param {CanvasRenderingContext2D} ctx @param {{ shadow?: boolean, shadowOpacity?: number, shadowBlur?: number, shadowOffsetX?: number, shadowOffsetY?: number }} renderOpts */
+  render(ctx, renderOpts = {}) {
     const w = this.width
     const h = this.height
     const r = 5  // corner radius
 
-    // Body
-    ctx.beginPath()
-    ctx.roundRect(-w / 2, -h / 2, w, h, r)
-    ctx.fillStyle = this.color
-    ctx.fill()
+    // Ground shadow — drawn in a separate transform so the offset is in
+    // page-space (world-space), not car-local space. Zero offset = centered.
+    if (renderOpts.shadow !== false) {
+      const opacity = renderOpts.shadowOpacity ?? 0.40
+      const blur    = renderOpts.shadowBlur    ?? 4
+      const ox      = renderOpts.shadowOffsetX ?? 0
+      const oy      = renderOpts.shadowOffsetY ?? 0
+      ctx.save()
+      ctx.translate(this.x + ox, this.y + oy)
+      ctx.rotate(this.heading)
+      ctx.filter = `blur(${blur}px)`
+      ctx.fillStyle = `rgba(0,0,0,${opacity})`
+      ctx.fillRect(-w / 2, -h / 2, w, h)
+      ctx.filter = 'none'
+      ctx.restore()
+    }
 
-    // Windshield stripe (front third, slightly darker)
-    ctx.beginPath()
-    ctx.roundRect(w / 2 - w / 3, -h / 2 + 3, w / 3 - 3, h - 6, 2)
-    ctx.fillStyle = 'rgba(0,0,0,0.25)'
-    ctx.fill()
+    ctx.save()
+    ctx.translate(this.x, this.y)
+    ctx.rotate(this.heading)
+
+    // Body — sprite if loaded, otherwise rectangle
+    if (this.sprite && this.sprite.complete && this.sprite.naturalWidth > 0) {
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(this.sprite, -w / 2, -h / 2, w, h)
+    } else {
+      ctx.beginPath()
+      ctx.roundRect(-w / 2, -h / 2, w, h, r)
+      ctx.fillStyle = this.color
+      ctx.fill()
+
+      // Windshield stripe (front third, slightly darker)
+      ctx.beginPath()
+      ctx.roundRect(w / 2 - w / 3, -h / 2 + 3, w / 3 - 3, h - 6, 2)
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'
+      ctx.fill()
+    }
+
+    // Exhaust afterfire flash
+    if (this._exhaustFrame >= 0 && this.exhaustPosition) {
+      const OPACITIES = [0.5, 1.0, 1.0, 0.66, 0.33]
+      const opacity = OPACITIES[this._exhaustFrame] ?? 0
+      const radius = this.exhaustRadius
+      ctx.fillStyle = `rgba(255, 220, 0, ${opacity})`
+      for (const p of this._exhaustPositions(w, h)) {
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
 
     ctx.restore()
+  }
+
+  /**
+   * Returns exhaust point(s) in car-local space.
+   * x-axis = forward, y-axis = right side of car (canvas y-down convention).
+   * offset 0 = front/left-corner, offset 1 = rear/right-corner.
+   */
+  _exhaustPositions(w, h) {
+    const o = this.exhaustOffset
+    const sideX  = w / 2 - o * w   // offset=0 → front (+w/2), offset=1 → rear (−w/2)
+    const rearY  = -h / 2 + o * h  // offset=0 → left corner, offset=1 → right corner
+    switch (this.exhaustPosition) {
+      case 'left':      return [{ x: sideX, y: -h / 2 }]
+      case 'right':     return [{ x: sideX, y:  h / 2 }]
+      case 'bothSides': return [{ x: sideX, y: -h / 2 }, { x: sideX, y: h / 2 }]
+      case 'rear':      return [{ x: -w / 2, y: rearY }]
+      default:          return []
+    }
   }
 }
