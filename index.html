@@ -59,29 +59,64 @@
     }
 
     #controls {
-      position: fixed;
-      top: 16px;
-      right: 16px;
+      display: none;
       font-family: monospace;
-      font-size: 0.75rem;
+      font-size: 0.78rem;
       color: #aaa;
-      background: rgba(0,0,0,0.7);
-      padding: 12px 16px;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid #444;
       border-radius: 6px;
-      z-index: 10001;
+      padding: 18px 20px;
+      margin: 2em 0;
+      columns: 2;
+      column-gap: 28px;
+    }
+    .ctrl-group {
+      break-inside: avoid;
+      margin-bottom: 18px;
+    }
+    .ctrl-group:last-child { margin-bottom: 0; }
+    .ctrl-group-label {
+      color: #e9c46a;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 4px;
+    }
+    .ctrl-item {
+      margin-bottom: 10px;
+    }
+    .ctrl-item:last-child { margin-bottom: 0; }
+    .ctrl-name {
+      color: #888;
+      margin-bottom: 3px;
+    }
+    .ctrl-row {
       display: flex;
-      flex-direction: column;
+      align-items: center;
       gap: 8px;
     }
-    #controls label {
+    .ctrl-row input[type="range"] {
+      flex: 1;
+      min-width: 0;
+    }
+    .ctrl-val {
+      color: #f0ede8;
+      min-width: 36px;
+      text-align: right;
+    }
+    .ctrl-bool {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      color: #aaa;
     }
-    #controls input[type="range"] {
-      width: 120px;
-    }
+    .ctrl-bool:last-child { margin-bottom: 0; }
+    .ctrl-bool input { cursor: pointer; width: 13px; height: 13px; }
   </style>
 </head>
 <body>
@@ -94,6 +129,94 @@
     brakes, drifts, leaves skidmarks, and backfires. Press
     <strong>Shift+Space</strong> to toggle the debug overlay.
   </p>
+
+  <div id="controls">
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Navigation</div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Arrival radius</div>
+        <div class="ctrl-row">
+          <input type="range" id="arrivalSlider" min="48" max="240" value="144" step="4" />
+          <span class="ctrl-val"><span id="arrivalVal">144</span>px</span>
+        </div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Scatter radius</div>
+        <div class="ctrl-row">
+          <input type="range" id="scatterSlider" min="0.3" max="2.0" value="1.4" step="0.05" />
+          <span class="ctrl-val"><span id="scatterVal">1.40</span>×</span>
+        </div>
+      </div>
+      <label class="ctrl-bool">
+        <input type="checkbox" id="orbitCheck" checked />
+        Orbit detection
+      </label>
+      <label class="ctrl-bool">
+        <input type="checkbox" id="proximityCheck" checked />
+        Proximity boost
+      </label>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Slip angle</div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Stiffness</div>
+        <div class="ctrl-row">
+          <input type="range" id="slipStiffSlider" min="5" max="80" value="34" step="1" />
+          <span class="ctrl-val" id="slipStiffVal">34</span>
+        </div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Damping</div>
+        <div class="ctrl-row">
+          <input type="range" id="slipDampSlider" min="0.5" max="15" value="3" step="0.5" />
+          <span class="ctrl-val" id="slipDampVal">3.0</span>
+        </div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Scale</div>
+        <div class="ctrl-row">
+          <input type="range" id="slipScaleSlider" min="0.5" max="8" value="1" step="0.5" />
+          <span class="ctrl-val"><span id="slipScaleVal">1.0</span>×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Shadows</div>
+      <label class="ctrl-bool">
+        <input type="checkbox" id="shadowCheck" checked />
+        Enabled
+      </label>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Blur</div>
+        <div class="ctrl-row">
+          <input type="range" id="shadowBlurSlider" min="0" max="10" value="4.5" step="0.5" />
+          <span class="ctrl-val"><span id="shadowBlurVal">4.5</span>px</span>
+        </div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Opacity</div>
+        <div class="ctrl-row">
+          <input type="range" id="shadowOpSlider" min="0" max="1" value="0.4" step="0.05" />
+          <span class="ctrl-val" id="shadowOpVal">0.40</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Exhaust</div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Pop interval</div>
+        <div class="ctrl-row">
+          <input type="range" id="exhaustIntSlider" min="0.2" max="3.0" value="0.9" step="0.1" />
+          <span class="ctrl-val"><span id="exhaustIntVal">0.9</span>s</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
 
   <h2>Programmatic API</h2>
   <p>
@@ -122,6 +245,9 @@
     maxSteering: 35 &nbsp;&nbsp;— degrees of front wheel travel<br />
     steeringRate: 120 — degrees/s the wheel can turn<br />
     arrivalRadius: 144 — px; brake-to-stop zone around target<br />
+    slipStiffness: 34 &nbsp;— rear grip spring; ω_n = √k ≈ 5.8 rad/s<br />
+    slipDamping: 3 &nbsp;&nbsp;&nbsp;&nbsp;— ζ ≈ 0.34; underdamped, visible overshoot on corner exit<br />
+    slipScale: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;— mark offset multiplier; increase to exaggerate the wiggle<br />
     <br />
     <span style="color:#e9c46a">// Appearance</span><br />
     color: '#e63946' &nbsp;— any CSS color<br />
@@ -133,7 +259,7 @@
     exhaustPosition: null &nbsp;&nbsp;— 'left' | 'right' | 'bothSides' | 'rear'<br />
     exhaustOffset: 0.5 &nbsp;&nbsp;&nbsp;&nbsp;— 0–1 along the chosen edge<br />
     exhaustRadius: 6 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— flash circle radius in px<br />
-    exhaustInterval: 2.2 &nbsp;&nbsp;— min seconds between flashes (actual = interval × 1–2×)
+    exhaustInterval: 0.9 &nbsp;&nbsp;— min seconds between flashes (actual = interval × 1–2×)
   </p>
 
   <h2>CarDriver options</h2>
@@ -256,6 +382,31 @@
     car escapes cleanly rather than being dragged along.
   </p>
 
+  <h2>Rear slip angle</h2>
+  <p>
+    Turn skidmarks are driven by a rear slip angle <em>α</em> modelled as a
+    2nd-order damped oscillator:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    α̈ = ω − k·α − c·α̇
+  </p>
+  <p>
+    where <em>ω</em> is the yaw rate from the bicycle model (the cornering
+    forcing), <em>k</em> is <code>slipStiffness</code>, and <em>c</em> is
+    <code>slipDamping</code>. At the defaults, the damping ratio
+    <em>ζ = c / (2√k) ≈ 0.34</em> — clearly underdamped, so when the car
+    exits a corner the rear steps out and oscillates back through zero before settling.
+    That single overshoot is the snap-back wiggle you see in the turn
+    skidmarks. Higher <em>ζ</em> eliminates the overshoot entirely; lower
+    values produce multiple oscillations.
+  </p>
+  <p>
+    Turn marks fire when <em>|α| &gt; 0.05 rad</em> (~3°). The rear
+    contact-patch positions are offset laterally by <em>sin(α)</em>, so marks
+    fan outward mid-corner and trace the oscillation arc on exit — rather than
+    a geometrically perfect curve.
+  </p>
+
   <h2>Avoidance steering</h2>
   <p>
     While not braking or inside the arrival zone, each car computes a repulsion
@@ -294,11 +445,12 @@
     <strong style="color:#663399">Accel</strong> — wheel-spin on launch while
     actually gaining speed (10–100 px/s). Opacity scales as
     <em>1 − (v − 10) / 90</em> — darkest at launch, invisible at 100 px/s.<br />
-    <strong style="color:#00cccc">Turn</strong> — steering above 65% of full
-    lock at over 100 px/s. Opacity is proportional to lock angle (lightened).
-    The inner tyre starts 10 frames later and ends 10 frames earlier than the
-    outer — a naturally shorter inner streak with no gaps — and renders at 20%
-    of the outer's opacity.<br />
+    <strong style="color:#00cccc">Turn</strong> — rear slip angle above 0.05 rad
+    at over 60 px/s (see slip angle section above). Opacity scales with slip
+    magnitude. The inner tyre starts 10 frames later and ends 10 frames earlier
+    than the outer — a naturally shorter inner streak — and renders at 20% of
+    the outer's opacity. Contact patches are offset by the slip angle so marks
+    deviate from a perfect arc.<br />
     <strong style="color:#ff6600">Bump</strong> — a nearly-stopped car nudged
     by a collision. All four wheels, half opacity.
   </p>
@@ -330,7 +482,7 @@
   </p>
   <p>
     When <code>exhaustPosition</code> is set, a brief yellow circle fires at
-    the specified location every 3–6 seconds while the car is moving above
+    the specified location every 2.2–4.4 seconds (default) while the car is moving above
     50 px/s — a 5-frame animation at opacities [0.5, 1.0, 1.0, 0.66, 0.33].
     The position is specified in car-local space:
     <code>'rear'</code>, <code>'left'</code>, <code>'right'</code>, or
@@ -339,14 +491,6 @@
   </p>
 </div>
 
-<div id="controls">
-  <label>Arrival radius <span id="arrivalVal">144</span>px
-    <input type="range" id="arrivalSlider" min="48" max="240" value="144" step="4" />
-  </label>
-  <label>Scatter radius mult <span id="scatterVal">1.40</span>×
-    <input type="range" id="scatterSlider" min="0.3" max="2.0" value="1.4" step="0.05" />
-  </label>
-</div>
 
 <div id="coords">click anywhere to drive</div>
 
@@ -385,12 +529,13 @@
   // Nissan
   driver.addCar({
     color: '#0000ff',
-    maxSpeed: 650,
-    acceleration: 200,
-    maxSteering: 35,
-    steeringRate: 150,
+    maxSpeed: 550,
+    acceleration: 100,
+    maxSteering: 30,
+    steeringRate: 100,
     wheelbase: 40,
     tireWidth: 6,
+    slipScale: 1.5,
     exhaustPosition: 'rear',
     exhaustOffset: 0.6,
     exhaustRadius: 4,
@@ -401,38 +546,98 @@
   // Expose for console experimentation
   window.driver = driver
 
-  // Shift+Space toggles debug overlay
+  const controlsPanel = document.getElementById('controls')
+
+  // Shift+Space toggles debug overlay + controls panel
   document.addEventListener('keydown', (e) => {
     if (e.shiftKey && e.code === 'Space') {
       e.preventDefault()
       driver.debug = !driver.debug
+      controlsPanel.style.display = driver.debug ? 'block' : 'none'
     }
   })
 
   // Stop clicks on controls from driving cars
-  document.getElementById('controls').addEventListener('click', (e) => {
-    e.stopPropagation()
-  })
+  controlsPanel.addEventListener('click', (e) => e.stopPropagation())
 
-  // Arrival radius slider
+  // ── Navigation ──────────────────────────────────────────────
   const arrivalSlider = document.getElementById('arrivalSlider')
-  const arrivalVal = document.getElementById('arrivalVal')
+  const arrivalVal    = document.getElementById('arrivalVal')
   arrivalSlider.addEventListener('input', () => {
     const v = Number(arrivalSlider.value)
     arrivalVal.textContent = v
     for (const car of driver.cars) car.arrivalRadius = v
   })
 
-  // Scatter radius multiplier slider
   const scatterSlider = document.getElementById('scatterSlider')
-  const scatterVal = document.getElementById('scatterVal')
-  scatterSlider.addEventListener('input', () => {
-    scatterVal.textContent = Number(scatterSlider.value).toFixed(2)
-  })
-  // Store multiplier on driver so driveTo can read it
+  const scatterVal    = document.getElementById('scatterVal')
   driver._scatterMult = 1.4
   scatterSlider.addEventListener('input', () => {
     driver._scatterMult = Number(scatterSlider.value)
+    scatterVal.textContent = driver._scatterMult.toFixed(2)
+  })
+
+  document.getElementById('orbitCheck').addEventListener('change', (e) => {
+    for (const car of driver.cars) car.orbitDetection = e.target.checked
+  })
+
+  document.getElementById('proximityCheck').addEventListener('change', (e) => {
+    for (const car of driver.cars) car.proximityBoost = e.target.checked
+  })
+
+  // ── Slip angle ───────────────────────────────────────────────
+  const slipStiffSlider = document.getElementById('slipStiffSlider')
+  const slipStiffVal    = document.getElementById('slipStiffVal')
+  slipStiffSlider.addEventListener('input', () => {
+    const v = Number(slipStiffSlider.value)
+    slipStiffVal.textContent = v
+    for (const car of driver.cars) car.slipStiffness = v
+  })
+
+  const slipDampSlider = document.getElementById('slipDampSlider')
+  const slipDampVal    = document.getElementById('slipDampVal')
+  slipDampSlider.addEventListener('input', () => {
+    const v = Number(slipDampSlider.value)
+    slipDampVal.textContent = v.toFixed(1)
+    for (const car of driver.cars) car.slipDamping = v
+  })
+
+  const slipScaleSlider = document.getElementById('slipScaleSlider')
+  const slipScaleVal    = document.getElementById('slipScaleVal')
+  slipScaleSlider.addEventListener('input', () => {
+    const v = Number(slipScaleSlider.value)
+    slipScaleVal.textContent = v.toFixed(1)
+    for (const car of driver.cars) car.slipScale = v
+  })
+
+  // ── Shadows ──────────────────────────────────────────────────
+  document.getElementById('shadowCheck').addEventListener('change', (e) => {
+    driver.shadow = e.target.checked
+  })
+
+  const shadowBlurSlider = document.getElementById('shadowBlurSlider')
+  const shadowBlurVal    = document.getElementById('shadowBlurVal')
+  shadowBlurSlider.addEventListener('input', () => {
+    const v = Number(shadowBlurSlider.value)
+    shadowBlurVal.textContent = v
+    driver.shadowBlur = v
+  })
+
+  const shadowOpSlider = document.getElementById('shadowOpSlider')
+  const shadowOpVal    = document.getElementById('shadowOpVal')
+  shadowOpSlider.addEventListener('input', () => {
+    const v = Number(shadowOpSlider.value)
+    shadowOpVal.textContent = v.toFixed(2)
+    driver.shadowOpacity = v
+  })
+
+  // ── Exhaust ──────────────────────────────────────────────────
+  const exhaustIntSlider = document.getElementById('exhaustIntSlider')
+  const exhaustIntVal    = document.getElementById('exhaustIntVal')
+  exhaustIntSlider.addEventListener('input', () => {
+    const v = Number(exhaustIntSlider.value)
+    exhaustIntVal.textContent = v.toFixed(1)
+    for (const car of driver.cars) car.exhaustInterval = v
   })
 
   // Update coordinate display on click

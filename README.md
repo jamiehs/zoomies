@@ -50,7 +50,7 @@ new CarDriver({
   // Shadows
   shadow: true,           // draw soft shadow under each car
   shadowOpacity: 0.40,    // shadow fill opacity
-  shadowBlur: 4,          // shadow blur radius in px
+  shadowBlur: 4.5,        // shadow blur radius in px
   shadowOffsetX: 4,       // shadow offset in page-space (not car-space)
   shadowOffsetY: 6,
 
@@ -90,6 +90,9 @@ All options are optional — sensible defaults are provided.
 | `steeringRate` | 120 | How fast the steering wheel turns, in degrees/s |
 | `arrivalRadius` | 144 | Radius around target where car brakes to a stop |
 | `skidThreshold` | 150 | Speed above which braking produces a skid effect |
+| `slipStiffness` | 34 | Rear slip spring constant — how quickly tires restore grip (ω_n = √k ≈ 5.8 rad/s) |
+| `slipDamping` | 3 | Slip damper — ζ ≈ 0.34, clearly underdamped with visible overshoot on corner exit |
+| `slipScale` | 1.0 | Multiplier on the mark lateral offset — increase to exaggerate the visual wiggle without changing physics |
 
 ### Appearance
 
@@ -102,14 +105,14 @@ All options are optional — sensible defaults are provided.
 
 ### Exhaust afterfire
 
-When `exhaustPosition` is set, a brief yellow flash fires every 3–6 seconds while the car is moving.
+When `exhaustPosition` is set, a brief yellow flash fires periodically while the car is moving above 50 px/s. The interval is `exhaustInterval × (1–2)`, so the default 2.2 s setting fires every 2.2–4.4 s.
 
 | Option | Default | Description |
 |---|---|---|
 | `exhaustPosition` | `null` | `'left'` \| `'right'` \| `'bothSides'` \| `'rear'` |
 | `exhaustOffset` | 0.5 | Position along the chosen edge (0 = front/left corner, 1 = rear/right corner) |
 | `exhaustRadius` | 6 | Radius of each flash circle in px |
-| `exhaustInterval` | 2.2 | Minimum seconds between flashes; actual interval is `exhaustInterval × (1–2)` |
+| `exhaustInterval` | 0.9 | Minimum seconds between flashes; actual interval is `exhaustInterval × (1–2)` |
 
 ### Behaviour flags
 
@@ -163,6 +166,16 @@ After every tick, overlapping pairs are hard-separated along their centre axis b
 ### Proximity boost
 
 When two cars are within 1.5 car-widths, the lead car (closer to its target) receives a forward speed boost: `urgency × (0.7 if colliding, else 0.3)`. The trailing car is never slowed.
+
+### Rear slip angle
+
+Turn skidmarks are driven by a rear slip angle `α` modelled as a 2nd-order damped oscillator:
+
+```
+d²α/dt² = ω − k·α − c·(dα/dt)
+```
+
+where `ω` is the current yaw rate (the cornering forcing), `k` is `slipStiffness`, and `c` is `slipDamping`. With `ζ = c / (2√k) ≈ 0.34` the system is clearly underdamped — on corner exit the rear steps out and oscillates back through zero before settling, producing the snap-back wiggle characteristic of a car on the limit. Turn marks fire when `|α| > 0.05 rad` and their contact-patch positions are offset laterally by `sin(α)`, so the marks fan outward mid-corner and trace the oscillation on exit.
 
 ### Avoidance steering
 

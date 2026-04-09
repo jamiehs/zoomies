@@ -15,12 +15,15 @@ const DEFAULTS = {
   steeringRate: 120,     // degrees/s — how fast the wheel turns
   arrivalRadius: 144,    // ~3× car width — must be > min turning radius (≈ 46px)
   skidThreshold: 150,    // px/s — speed above which arrival triggers a skid
+  slipStiffness: 34,     // rear slip spring constant — ω_n = √34 ≈ 5.8 rad/s
+  slipDamping: 3,        // slip damper — ζ ≈ 0.34, underdamped with clear overshoot
+  slipScale: 1.0,        // multiplier on the mark offset — increase to exaggerate the visual wiggle
   color: '#e63946',
   // Exhaust afterfire flash
   exhaustPosition: null, // 'left' | 'right' | 'bothSides' | 'rear'
   exhaustOffset: 0.5,    // 0–1 along the chosen edge (see _exhaustPositions)
   exhaustRadius: 6,      // px — radius of each exhaust flash circle
-  exhaustInterval: 2.2,  // seconds — minimum time between flashes; actual interval is exhaustInterval × (1 + random)
+  exhaustInterval: 0.9,  // seconds — minimum time between flashes; actual interval is exhaustInterval × (1 + random)
   // Sprite: URL string or HTMLImageElement; null = draw rectangle body
   sprite: null,
 }
@@ -46,6 +49,11 @@ export class Car {
     this.steeringRate = cfg.steeringRate * DEG
     this.arrivalRadius = cfg.arrivalRadius
     this.skidThreshold = cfg.skidThreshold
+    this.slipStiffness = cfg.slipStiffness
+    this.slipDamping   = cfg.slipDamping
+    this.slipScale     = cfg.slipScale
+    this._slipAngle    = 0   // rear slip angle (rad); positive = rear slides right
+    this._slipVel      = 0   // d(slipAngle)/dt
     this.color = cfg.color
 
     // Exhaust afterfire
@@ -321,12 +329,29 @@ export class Car {
   }
 
   _applyBicycleModel(dt) {
-    if (this.speed === 0) return
+    if (this.speed === 0) {
+      // At rest, spring the slip angle back to zero
+      const spring  = -this.slipStiffness * this._slipAngle
+      const damping = -this.slipDamping   * this._slipVel
+      this._slipVel   += (spring + damping) * dt
+      this._slipAngle += this._slipVel * dt
+      return
+    }
     // Rear-axle bicycle model
     const angularVel = (this.speed / this.wheelbase) * Math.tan(this.steeringAngle)
     this.heading += angularVel * dt
     this.x += Math.cos(this.heading) * this.speed * dt
     this.y += Math.sin(this.heading) * this.speed * dt
+
+    // Rear slip angle — 2nd order damped oscillator driven by yaw rate.
+    // The yaw rate is the "forcing" that builds up slip; tire grip (spring)
+    // restores it to zero; damping controls how quickly it settles.
+    // With slipDamping/slipStiffness tuned for ζ ≈ 0.64, you get one clean
+    // overshoot when the car exits a corner — the tail steps out, then snaps back.
+    const spring  = -this.slipStiffness * this._slipAngle
+    const damping = -this.slipDamping   * this._slipVel
+    this._slipVel   += (angularVel + spring + damping) * dt
+    this._slipAngle += this._slipVel * dt
   }
 
   /**

@@ -23,7 +23,7 @@ export class CarDriver {
     this.skidOpacity = opts.skidOpacity ?? 0.33
     this.shadow = opts.shadow ?? true
     this.shadowOpacity = opts.shadowOpacity ?? 0.40
-    this.shadowBlur = opts.shadowBlur ?? 4
+    this.shadowBlur = opts.shadowBlur ?? 4.5
     this.shadowOffsetX = opts.shadowOffsetX ?? 4
     this.shadowOffsetY = opts.shadowOffsetY ?? 6
     this.orbitDetection = opts.orbitDetection ?? true
@@ -200,7 +200,7 @@ export class CarDriver {
 
     const stop  = car._skidding
     const bump  = !stop && car._wasColliding && car.speed < 20
-    const turn  = !stop && !bump && Math.abs(car.steeringAngle) > car.maxSteering * 0.65 && car.speed > 100
+    const turn  = !stop && !bump && Math.abs(car._slipAngle) > 0.05 && car.speed > 60
     const accel = !stop && !bump && !turn && speeding && car.target !== null && car.speed > 10 && car.speed < 100
     const type = stop ? 'stop' : bump ? 'bump' : turn ? 'turn' : accel ? 'accel' : null
 
@@ -226,11 +226,14 @@ export class CarDriver {
     // car.x/y is the visual center; axles sit ±28% of width from center
     const axleOffset = car.width * 0.28
 
-    // Rear axle wheel positions
-    const rlx = car.x - fwdX * axleOffset + perpX * trackHalf
-    const rly = car.y - fwdY * axleOffset + perpY * trackHalf
-    const rrx = car.x - fwdX * axleOffset - perpX * trackHalf
-    const rry = car.y - fwdY * axleOffset - perpY * trackHalf
+    // Rear axle wheel positions — offset laterally by slip angle so marks
+    // fan outward mid-corner and trace the snap-back wiggle on corner exit.
+    // perpX points LEFT of heading; positive slipAngle = rear slides RIGHT.
+    const slipOffset = Math.sin(car._slipAngle) * car.height * 1.5 * car.slipScale
+    const rlx = car.x - fwdX * axleOffset + perpX * trackHalf - perpX * slipOffset
+    const rly = car.y - fwdY * axleOffset + perpY * trackHalf - perpY * slipOffset
+    const rrx = car.x - fwdX * axleOffset - perpX * trackHalf - perpX * slipOffset
+    const rry = car.y - fwdY * axleOffset - perpY * trackHalf - perpY * slipOffset
     // Front axle wheel positions
     const flx = car.x + fwdX * axleOffset + perpX * trackHalf
     const fly = car.y + fwdY * axleOffset + perpY * trackHalf
@@ -243,7 +246,8 @@ export class CarDriver {
     // Alpha baked at emit time — persistent canvas means no global i/n position
     const solidAlpha = 1.0
     const accelAlpha = Math.max(0, 1 - (car.speed - 10) / 90)                // 1 at launch → 0 at 100px/s
-    const turnAlpha  = (Math.abs(car.steeringAngle) / car.maxSteering) * 0.5  // proportional to steering lock, lightened
+    const maxSlip    = 0.20  // radians at which turn marks reach full alpha
+    const turnAlpha  = Math.min(Math.abs(car._slipAngle) / maxSlip, 1.0) * 0.5
     const bumpAlpha  = 0.5                                                     // light — nudge marks, not hard stops
     const tw = car.tireWidth  // baked into segment for persistent canvas
 
@@ -270,7 +274,7 @@ export class CarDriver {
       this._clearTurnState(car)
     } else if (type === 'turn') {
       this._bumpPrev.delete(car)
-      const innerLeft = car.steeringAngle > 0  // left turn → left tyre is inner
+      const innerLeft = car._slipAngle > 0  // positive slip = rear goes right = left is inner
       const ox = innerLeft ? rx : lx,  oy = innerLeft ? ry : ly  // outer
       const ix = innerLeft ? lx : rx,  iy = innerLeft ? ly : ry  // inner
 
@@ -290,11 +294,11 @@ export class CarDriver {
       const D = 10
       let queue = this._turnInnerQueue.get(car)
       if (!queue) { queue = []; this._turnInnerQueue.set(car, queue) }
-      queue.push({ x: ix, y: iy, steerAngle: car.steeringAngle })
+      queue.push({ x: ix, y: iy, slipAngle: car._slipAngle })
       if (queue.length > D) {
         const current = queue.shift()
         const delayedPrev = this._turnInnerDelayedPrev.get(car)
-        const innerAlpha = (Math.abs(current.steerAngle) / car.maxSteering) * 0.2
+        const innerAlpha = Math.min(Math.abs(current.slipAngle) / maxSlip, 1.0) * 0.2
         if (delayedPrev) {
           this._pushSkid({ x1: delayedPrev.x, y1: delayedPrev.y, x2: current.x, y2: current.y, type, streakId, isInner: true, alpha: innerAlpha, tw })
         }
@@ -532,6 +536,44 @@ export class CarDriver {
         ctx.restore()
       }
 
+      // Rear slip angle widget — arrow at rear axle perpendicular to heading,
+      // scaled by slip angle magnitude. Orange = sliding right, cyan = sliding left.
+      {
+        const fwdX  =  Math.cos(car.heading)
+        const fwdY  =  Math.sin(car.heading)
+        const perpX = -Math.sin(car.heading)
+        const perpY =  Math.cos(car.heading)
+        const axleOffset = car.width * 0.28
+        const rearX = car.x - fwdX * axleOffset
+        const rearY = car.y - fwdY * axleOffset
+        const SLIP_VIZ_SCALE = 200  // px per radian — makes ~0.14 rad = 28px
+        const slipPx = car._slipAngle * SLIP_VIZ_SCALE
+        // Arrow tip (perpX points left; positive slipAngle = slides right = -perp)
+        const tipX = rearX - perpX * slipPx
+        const tipY = rearY - perpY * slipPx
+        const slipping = Math.abs(car._slipAngle) > 0.05
+        const color = car._slipAngle > 0 ? '#ff6600' : '#00ccff'
+        ctx.strokeStyle = slipping ? color : 'rgba(255,255,255,0.3)'
+        ctx.fillStyle   = slipping ? color : 'rgba(255,255,255,0.3)'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(rearX, rearY)
+        ctx.lineTo(tipX, tipY)
+        ctx.stroke()
+        // Arrowhead
+        if (Math.abs(slipPx) > 4) {
+          const len = Math.sqrt((tipX - rearX) ** 2 + (tipY - rearY) ** 2)
+          const ux = (tipX - rearX) / len, uy = (tipY - rearY) / len
+          ctx.beginPath()
+          ctx.arc(tipX, tipY, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        // Slip angle label in degrees
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'
+        ctx.font = '9px monospace'
+        ctx.fillText(`α ${(car._slipAngle * 180 / Math.PI).toFixed(1)}°`, rearX + 6, rearY - 6)
+      }
+
       // Desired heading: line from car center showing where it wants to go
       if (car.target) {
         const len = 40
@@ -557,7 +599,7 @@ export class CarDriver {
     for (const car of this.cars) {
       const stop  = car._skidding
       const bump  = !stop && car._wasColliding && car.speed < 20
-      const turn  = !stop && !bump && Math.abs(car.steeringAngle) > car.maxSteering * 0.65 && car.speed > 100
+      const turn  = !stop && !bump && Math.abs(car._slipAngle) > 0.05 && car.speed > 60
       const accel = !stop && !bump && !turn && car.target !== null && car.speed > 10 && car.speed < 100
       const type  = stop ? 'stop' : bump ? 'bump' : turn ? 'turn' : accel ? 'accel' : null
       if (!type) continue
