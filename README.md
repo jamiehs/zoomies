@@ -88,6 +88,7 @@ All options are optional — sensible defaults are provided.
 | `wheelbase` | 32 | Distance between axles in px; also drives visual body length |
 | `maxSteering` | 35 | Maximum front wheel angle in degrees |
 | `steeringRate` | 120 | How fast the steering wheel turns, in degrees/s |
+| `twitchiness` | 0.4 | High-speed steering character. `0` = super stable (steering rate drops to zero at max speed), `1` = very twitchy (full steering rate at any speed). Controls how much `steeringRate` is reduced as speed rises. |
 | `arrivalRadius` | 144 | Radius around target where car brakes to a stop |
 | `skidThreshold` | 150 | Speed above which braking produces a skid effect |
 | `slipStiffness` | 34 | Rear slip spring constant — how quickly tires restore grip (ω_n = √k ≈ 5.8 rad/s) |
@@ -119,6 +120,7 @@ When `exhaustPosition` is set, a brief yellow flash fires periodically while the
 
 | Option | Default | Description |
 |---|---|---|
+| `driveBias` | `1.0` | Drivetrain layout: `0` = FWD (front marks on acceleration), `1` = RWD (rear marks), `0`–`1` = AWD with blended front/rear marks |
 | `orbitDetection` | `true` | Detect and escape infinite-circle situations |
 | `proximityBoost` | `true` | Lead car gets a speed boost to pull away from a trailing car |
 | `heading` | random | Initial heading in radians |

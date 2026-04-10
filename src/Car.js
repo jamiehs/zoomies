@@ -13,11 +13,13 @@ const DEFAULTS = {
   brakeDecel: 480,       // px/s²
   maxSteering: 35,       // degrees
   steeringRate: 120,     // degrees/s — how fast the wheel turns
+  twitchiness: 0.4, // 0–1: high-speed steering damping (0 = super stable, 1 = very twitchy)
   arrivalRadius: 144,    // ~3× car width — must be > min turning radius (≈ 46px)
   skidThreshold: 150,    // px/s — speed above which arrival triggers a skid
   slipStiffness: 34,     // rear slip spring constant — ω_n = √34 ≈ 5.8 rad/s
   slipDamping: 3,        // slip damper — ζ ≈ 0.34, underdamped with clear overshoot
   slipScale: 1.0,        // multiplier on the mark offset — increase to exaggerate the visual wiggle
+  driveBias: 1.0,        // 0 = FWD, 1 = RWD, 0–1 = AWD (affects accel skidmarks)
   shadowCornerRadius: 4, // px — corner radius of the shadow rectangle (0 = sharp)
   color: '#e63946',
   // Exhaust afterfire flash
@@ -48,11 +50,13 @@ export class Car {
     this.brakeDecel = cfg.brakeDecel
     this.maxSteering = cfg.maxSteering * DEG
     this.steeringRate = cfg.steeringRate * DEG
+    this.twitchiness = cfg.twitchiness
     this.arrivalRadius = cfg.arrivalRadius
     this.skidThreshold = cfg.skidThreshold
     this.slipStiffness = cfg.slipStiffness
     this.slipDamping   = cfg.slipDamping
     this.slipScale          = cfg.slipScale
+    this.driveBias          = cfg.driveBias
     this.shadowCornerRadius = cfg.shadowCornerRadius
     this._slipAngle    = 0   // rear slip angle (rad); positive = rear slides right
     this._slipVel      = 0   // d(slipAngle)/dt
@@ -251,17 +255,18 @@ export class Car {
     const headingError = angleDiff(this.heading, desiredHeading)
     this._debugDesiredHeading = desiredHeading
 
-    // Speed-sensitive steering: reduce max angle at high speed so fast cars
-    // don't snap into violent turns. At max speed the limit drops to ~35% of full lock.
+    // Speed-sensitive steering: limit how fast the wheel can move at high speed
+    // so fast cars can't snap to full lock instantly, but can still hold full
+    // lock in a sustained corner. This preserves alignFactor and slip dynamics.
     const speedRatio = clamp(this.speed / this.maxSpeed, 0, 1)
-    const effectiveMaxSteering = this.maxSteering * (1 - speedRatio * 0.65)
+    const effectiveSteeringRate = this.steeringRate * (1 - speedRatio * (1 - this.twitchiness))
 
-    // Drive steering toward desired, clamped to speed-adjusted maxSteering
-    const targetSteering = clamp(headingError, -effectiveMaxSteering, effectiveMaxSteering)
+    // Drive steering toward desired, clamped to maxSteering
+    const targetSteering = clamp(headingError, -this.maxSteering, this.maxSteering)
     const steerDelta = clamp(
       targetSteering - this.steeringAngle,
-      -this.steeringRate * dt,
-      this.steeringRate * dt,
+      -effectiveSteeringRate * dt,
+      effectiveSteeringRate * dt,
     )
     this.steeringAngle += steerDelta
 
@@ -316,8 +321,8 @@ export class Car {
     if (this._skidding) {
       this.steeringAngle = clamp(
         this.steeringAngle * 1.4,
-        -effectiveMaxSteering * 1.4,
-        effectiveMaxSteering * 1.4,
+        -this.maxSteering * 1.4,
+        this.maxSteering * 1.4,
       )
     }
 
@@ -418,6 +423,15 @@ export class Car {
     const h = this.height
     const r = 5  // corner radius
 
+    // Visual body heading: rotate around the front axle by the slip angle so
+    // the rear steps out while the front stays planted — matches skidmark fan.
+    const axleOffset = w * 0.28
+    const frontX = this.x + Math.cos(this.heading) * axleOffset
+    const frontY = this.y + Math.sin(this.heading) * axleOffset
+    const visualHeading = this.heading - this._slipAngle
+    const bodyX = frontX - Math.cos(visualHeading) * axleOffset
+    const bodyY = frontY - Math.sin(visualHeading) * axleOffset
+
     // Ground shadow — drawn in a separate transform so the offset is in
     // page-space (world-space), not car-local space. Zero offset = centered.
     if (renderOpts.shadow !== false) {
@@ -426,8 +440,8 @@ export class Car {
       const ox      = renderOpts.shadowOffsetX ?? 0
       const oy      = renderOpts.shadowOffsetY ?? 0
       ctx.save()
-      ctx.translate(this.x + ox, this.y + oy)
-      ctx.rotate(this.heading)
+      ctx.translate(bodyX + ox, bodyY + oy)
+      ctx.rotate(visualHeading)
       ctx.filter = `blur(${blur}px)`
       ctx.fillStyle = `rgba(0,0,0,${opacity})`
       const sr = this.shadowCornerRadius
@@ -443,8 +457,8 @@ export class Car {
     }
 
     ctx.save()
-    ctx.translate(this.x, this.y)
-    ctx.rotate(this.heading)
+    ctx.translate(bodyX, bodyY)
+    ctx.rotate(visualHeading)
 
     // Body — sprite if loaded, otherwise rectangle
     if (this.sprite && this.sprite.complete && this.sprite.naturalWidth > 0) {

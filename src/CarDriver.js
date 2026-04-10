@@ -42,9 +42,10 @@ export class CarDriver {
     this._skidEnabled  = new Map()  // car → bool
     this._lastSkidType = new Map()  // car → last active type (to detect new events)
 
-    // Stop/accel tracks: both tires emitted immediately
-    this._stopAccelPrev = new Map()  // car → { lx, ly, rx, ry }
+    // Stop/accel tracks: all four wheel positions stored each frame
+    this._stopAccelPrev = new Map()  // car → { flx, fly, frx, fry, rlx, rly, rrx, rry }
     this._prevSpeed     = new Map()  // car → speed last frame (for accel detection)
+    this._brakeLockBias = new Map()  // car → { fa, ra } — front/rear alpha weights, set once per stop event
 
     // Bump tracks: four wheels, fired when a nearly-stopped car is nudged
     this._bumpPrev = new Map()  // car → { flx, fly, frx, fry, rlx, rly, rrx, rry }
@@ -224,6 +225,15 @@ export class CarDriver {
     if (type !== this._lastSkidType.get(car)) {
       this._skidEnabled.set(car, Math.random() >= 0.5)
       this._lastSkidType.set(car, type)
+      // For braking: randomly pick which axle(s) lock harder this event
+      if (type === 'stop') {
+        const r = Math.random()
+        this._brakeLockBias.set(car,
+          r < 0.50 ? { fa: 1.0,  ra: 1.0  } :  // all four locked equally
+          r < 0.75 ? { fa: 1.0,  ra: 0.25 } :  // front-biased lock
+                     { fa: 0.25, ra: 1.0  }     // rear-biased lock
+        )
+      }
     }
 
     if (!type || !this._skidEnabled.get(car)) {
@@ -256,9 +266,6 @@ export class CarDriver {
     const frx = car.x + fwdX * axleOffset - perpX * trackHalf
     const fry = car.y + fwdY * axleOffset - perpY * trackHalf
 
-    // Aliases for two-wheel types (rear axle)
-    const lx = rlx, ly = rly, rx = rrx, ry = rry
-
     // Alpha baked at emit time — persistent canvas means no global i/n position
     const solidAlpha = 1.0
     const accelAlpha = Math.max(0, 1 - (car.speed - 10) / 90)                // 1 at launch → 0 at 100px/s
@@ -280,19 +287,40 @@ export class CarDriver {
       this._clearTurnState(car)
     } else if (type === 'stop' || type === 'accel') {
       this._bumpPrev.delete(car)
-      const alpha = type === 'stop' ? solidAlpha : accelAlpha
       const prev = this._stopAccelPrev.get(car)
-      if (prev) {
-        this._pushSkid({ x1: prev.lx, y1: prev.ly, x2: lx, y2: ly, type, alpha, tw })
-        this._pushSkid({ x1: prev.rx, y1: prev.ry, x2: rx, y2: ry, type, alpha, tw })
+
+      if (type === 'stop') {
+        // Braking marks on all four corners — axle alphas vary per event
+        const { fa, ra } = this._brakeLockBias.get(car) ?? { fa: 1.0, ra: 1.0 }
+        if (prev) {
+          this._pushSkid({ x1: prev.flx, y1: prev.fly, x2: flx, y2: fly, type, alpha: fa * solidAlpha, tw })
+          this._pushSkid({ x1: prev.frx, y1: prev.fry, x2: frx, y2: fry, type, alpha: fa * solidAlpha, tw })
+          this._pushSkid({ x1: prev.rlx, y1: prev.rly, x2: rlx, y2: rly, type, alpha: ra * solidAlpha, tw })
+          this._pushSkid({ x1: prev.rrx, y1: prev.rry, x2: rrx, y2: rry, type, alpha: ra * solidAlpha, tw })
+        }
+      } else {
+        // Accel marks on driven wheels only, weighted by driveBias
+        const rearAlpha  = car.driveBias       * accelAlpha
+        const frontAlpha = (1 - car.driveBias) * accelAlpha
+        if (prev) {
+          if (rearAlpha > 0) {
+            this._pushSkid({ x1: prev.rlx, y1: prev.rly, x2: rlx, y2: rly, type, alpha: rearAlpha,  tw })
+            this._pushSkid({ x1: prev.rrx, y1: prev.rry, x2: rrx, y2: rry, type, alpha: rearAlpha,  tw })
+          }
+          if (frontAlpha > 0) {
+            this._pushSkid({ x1: prev.flx, y1: prev.fly, x2: flx, y2: fly, type, alpha: frontAlpha, tw })
+            this._pushSkid({ x1: prev.frx, y1: prev.fry, x2: frx, y2: fry, type, alpha: frontAlpha, tw })
+          }
+        }
       }
-      this._stopAccelPrev.set(car, { lx, ly, rx, ry })
+
+      this._stopAccelPrev.set(car, { flx, fly, frx, fry, rlx, rly, rrx, rry })
       this._clearTurnState(car)
     } else if (type === 'turn') {
       this._bumpPrev.delete(car)
       const innerLeft = car._slipAngle > 0  // positive slip = rear goes right = left is inner
-      const ox = innerLeft ? rx : lx,  oy = innerLeft ? ry : ly  // outer
-      const ix = innerLeft ? lx : rx,  iy = innerLeft ? ly : ry  // inner
+      const ox = innerLeft ? rrx : rlx,  oy = innerLeft ? rry : rly  // outer
+      const ix = innerLeft ? rlx : rrx,  iy = innerLeft ? rly : rry  // inner
 
       if (!this._turnOuterPrev.has(car)) {
         this._turnStreakId.set(car, this._nextStreakId++)
@@ -434,6 +462,7 @@ export class CarDriver {
         this._stopAccelPrev.delete(car)
         this._prevSpeed.delete(car)
         this._bumpPrev.delete(car)
+        this._brakeLockBias.delete(car)
         this._skidEnabled.delete(car)
         this._lastSkidType.delete(car)
       }

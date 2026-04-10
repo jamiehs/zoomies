@@ -238,39 +238,53 @@
   </p>
   <p style="font-family:monospace; font-size:0.82em; line-height:2; color:#aaa">
     <span style="color:#e9c46a">// Physics</span><br />
-    maxSpeed: 320 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px/s (±20% random variation)<br />
-    acceleration: 220 — px/s²<br />
-    brakeDecel: 480 &nbsp;&nbsp;— px/s²<br />
-    wheelbase: 32 &nbsp;&nbsp;&nbsp;&nbsp;— px; also scales visual body length<br />
-    maxSteering: 35 &nbsp;&nbsp;— degrees of front wheel travel<br />
-    steeringRate: 120 — degrees/s the wheel can turn<br />
+    maxSpeed: 320 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px/s (±20% random variation per car)<br />
+    acceleration: 220 &nbsp;— px/s²<br />
+    brakeDecel: 480 &nbsp;&nbsp;&nbsp;— px/s²<br />
+    wheelbase: 32 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px; also scales visual body length<br />
+    maxSteering: 35 &nbsp;&nbsp;&nbsp;— degrees of front wheel travel<br />
+    steeringRate: 120 &nbsp;— degrees/s the wheel can turn<br />
+    twitchiness: 0.4 &nbsp;&nbsp;— 0 = super stable (rate drops to zero at top speed), 1 = very twitchy (full rate always)<br />
     arrivalRadius: 144 — px; brake-to-stop zone around target<br />
+    skidThreshold: 150 — px/s; speed above which braking produces a skid<br />
     slipStiffness: 34 &nbsp;— rear grip spring; ω_n = √k ≈ 5.8 rad/s<br />
     slipDamping: 3 &nbsp;&nbsp;&nbsp;&nbsp;— ζ ≈ 0.34; underdamped, visible overshoot on corner exit<br />
     slipScale: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;— mark offset multiplier; increase to exaggerate the wiggle<br />
+    driveBias: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;— 0 = FWD, 1 = RWD, 0–1 = AWD (affects accel skidmarks)<br />
     <br />
     <span style="color:#e9c46a">// Appearance</span><br />
-    color: '#e63946' &nbsp;— any CSS color<br />
-    height: 24 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— body height in px<br />
-    tireWidth: 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— skidmark line width in px<br />
-    sprite: null &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— URL string or HTMLImageElement<br />
+    color: '#e63946' &nbsp;&nbsp;— any CSS color<br />
+    height: 24 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— body height in px<br />
+    tireWidth: 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— skidmark line width in px<br />
+    sprite: null &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— URL string or HTMLImageElement<br />
     shadowCornerRadius: 4 — shadow rect corner radius in px (0 = square)<br />
     <br />
     <span style="color:#e9c46a">// Exhaust afterfire</span><br />
     exhaustPosition: null &nbsp;&nbsp;— 'left' | 'right' | 'bothSides' | 'rear'<br />
     exhaustOffset: 0.5 &nbsp;&nbsp;&nbsp;&nbsp;— 0–1 along the chosen edge<br />
     exhaustRadius: 6 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— flash circle radius in px<br />
-    exhaustInterval: 0.9 &nbsp;&nbsp;— min seconds between flashes (actual = interval × 1–2×)
+    exhaustInterval: 0.9 &nbsp;&nbsp;— min seconds between flashes (actual = interval × 1–2×)<br />
+    <br />
+    <span style="color:#e9c46a">// Behaviour flags</span><br />
+    orbitDetection: true &nbsp;&nbsp;— detect and escape infinite-circle situations<br />
+    proximityBoost: true &nbsp;&nbsp;— lead car gets a speed boost to pull away from a trailer<br />
+    <br />
+    <span style="color:#e9c46a">// Initial state</span><br />
+    x, y &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— spawn position (default: random on canvas)<br />
+    heading &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— initial heading in radians (default: random)
   </p>
 
   <h2>CarDriver options</h2>
   <p style="font-family:monospace; font-size:0.82em; line-height:2; color:#aaa">
-    count: 3 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— cars spawned on init<br />
-    skidOpacity: 0.08 &nbsp;&nbsp;— global skidmark opacity multiplier<br />
+    count: 3 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— cars spawned on init<br />
+    zIndex: 9999 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— canvas z-index<br />
+    clickTarget: document — element to bind clicks on; null to disable<br />
+    debug: false &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— show debug overlay (Ctrl+Shift+Space toggles at runtime)<br />
+    skidOpacity: 0.08 &nbsp;&nbsp;&nbsp;— global skidmark opacity multiplier<br />
     shadow: true<br />
     shadowOpacity: 0.40<br />
-    shadowBlur: 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px<br />
-    shadowOffsetX: 4 &nbsp;&nbsp;&nbsp;— page-space offset (not car-space)<br />
+    shadowBlur: 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px<br />
+    shadowOffsetX: 4 &nbsp;&nbsp;&nbsp;&nbsp;— page-space offset (not car-space)<br />
     shadowOffsetY: 6
   </p>
 
