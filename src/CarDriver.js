@@ -639,6 +639,41 @@ export class CarDriver {
         ctx.fillStyle = '#0f0'
         ctx.fill()
       }
+
+      // Front wheel steering lines — paper-thin top-down wheels oriented at
+      // heading + steeringAngle. Shows actual wheel direction vs car heading.
+      {
+        const fwdX   =  Math.cos(car.heading)
+        const fwdY   =  Math.sin(car.heading)
+        const perpX  = -Math.sin(car.heading)
+        const perpY  =  Math.cos(car.heading)
+        const axleOffset = car.width * 0.28
+        const trackHalf  = car.height * 0.38
+        const wheelHalf  = car.height * 0.5   // half-length of each wheel line
+
+        const axleCX = car.x + fwdX * axleOffset
+        const axleCY = car.y + fwdY * axleOffset
+
+        // Left and right front wheel centres
+        const flX = axleCX + perpX * trackHalf
+        const flY = axleCY + perpY * trackHalf
+        const frX = axleCX - perpX * trackHalf
+        const frY = axleCY - perpY * trackHalf
+
+        // Wheel rolling direction
+        const wheelAngle = car.heading + car.steeringAngle
+        const wdX = Math.cos(wheelAngle) * wheelHalf
+        const wdY = Math.sin(wheelAngle) * wheelHalf
+
+        ctx.strokeStyle = '#ffe600'
+        ctx.lineWidth = 2.5
+        ctx.beginPath()
+        ctx.moveTo(flX - wdX, flY - wdY)
+        ctx.lineTo(flX + wdX, flY + wdY)
+        ctx.moveTo(frX - wdX, frY - wdY)
+        ctx.lineTo(frX + wdX, frY + wdY)
+        ctx.stroke()
+      }
     }
 
     // Per-car: skid type indicator — ring + label in matching skidmark color

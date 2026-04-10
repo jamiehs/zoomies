@@ -242,7 +242,7 @@
     acceleration: 220 &nbsp;— px/s²<br />
     brakeDecel: 480 &nbsp;&nbsp;&nbsp;— px/s²<br />
     wheelbase: 32 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px; also scales visual body length<br />
-    maxSteering: 35 &nbsp;&nbsp;&nbsp;— degrees of front wheel travel<br />
+    maxSteering: 35 &nbsp;&nbsp;&nbsp;— ± degrees from centre (lock-to-lock = maxSteering × 2)<br />
     steeringRate: 120 &nbsp;— degrees/s the wheel can turn<br />
     twitchiness: 0.4 &nbsp;&nbsp;— 0 = super stable (rate drops to zero at top speed), 1 = very twitchy (full rate always)<br />
     arrivalRadius: 144 — px; brake-to-stop zone around target<br />
@@ -251,6 +251,7 @@
     slipDamping: 3 &nbsp;&nbsp;&nbsp;&nbsp;— ζ ≈ 0.34; underdamped, visible overshoot on corner exit<br />
     slipScale: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;— mark offset multiplier; increase to exaggerate the wiggle<br />
     driveBias: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;— 0 = FWD, 1 = RWD, 0–1 = AWD (affects accel skidmarks)<br />
+    aggression: 0.3 &nbsp;&nbsp;&nbsp;— 0 = careful (aims straight at target while braking), 1 = committed (follows bezier all the way in)<br />
     <br />
     <span style="color:#e9c46a">// Appearance</span><br />
     color: '#e63946' &nbsp;&nbsp;— any CSS color<br />
@@ -523,7 +524,9 @@
     height: 32,
     wheelbase: 42,
     maxSteering: 20,
-    steeringRate: 80,
+    twitchiness: 0.2,
+    steeringRate: 200,
+    driveBias: 0.6,
     acceleration: 190,
     tireWidth: 7,
     exhaustPosition: 'right',
@@ -535,8 +538,10 @@
     color: 'rgb(201, 176, 32)',
     height: 32,
     wheelbase: 42,
-    maxSteering: 25,
-    steeringRate: 90,
+    maxSteering: 20,
+    twitchiness: 0.1,
+    steeringRate: 200,
+    driveBias: 0.6,
     acceleration: 200,
     tireWidth: 7,
     exhaustPosition: 'right',
@@ -552,8 +557,10 @@
     wheelbase: 48,
     maxSpeed: 550,
     acceleration: 100,
-    maxSteering: 30,
-    steeringRate: 100,
+    maxSteering: 22,
+    twitchiness: 0.3,
+    steeringRate: 200,
+    driveBias: 1,
     tireWidth: 6,
     slipScale: 1.5,
     exhaustPosition: 'rear',

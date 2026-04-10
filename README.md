@@ -86,7 +86,7 @@ All options are optional — sensible defaults are provided.
 | `acceleration` | 220 | Acceleration in px/s² |
 | `brakeDecel` | 480 | Braking deceleration in px/s² |
 | `wheelbase` | 32 | Distance between axles in px; also drives visual body length |
-| `maxSteering` | 35 | Maximum front wheel angle in degrees |
+| `maxSteering` | 35 | Maximum front wheel angle in ± degrees from centre (lock-to-lock = `maxSteering × 2`) |
 | `steeringRate` | 120 | How fast the steering wheel turns, in degrees/s |
 | `twitchiness` | 0.4 | High-speed steering character. `0` = super stable (steering rate drops to zero at max speed), `1` = very twitchy (full steering rate at any speed). Controls how much `steeringRate` is reduced as speed rises. |
 | `arrivalRadius` | 144 | Radius around target where car brakes to a stop |
@@ -121,6 +121,7 @@ When `exhaustPosition` is set, a brief yellow flash fires periodically while the
 | Option | Default | Description |
 |---|---|---|
 | `driveBias` | `1.0` | Drivetrain layout: `0` = FWD (front marks on acceleration), `1` = RWD (rear marks), `0`–`1` = AWD with blended front/rear marks |
+| `aggression` | `0.3` | How committed the car is to its bezier path while braking. `0` = careful (drops the path, aims straight at target); `1` = aggressive (follows the path all the way in). Values in between blend the two steering directions. |
 | `orbitDetection` | `true` | Detect and escape infinite-circle situations |
 | `proximityBoost` | `true` | Lead car gets a speed boost to pull away from a trailing car |
 | `heading` | random | Initial heading in radians |
@@ -138,7 +139,38 @@ Each car is a kinematic rear-axle bicycle model. The two rear wheels are collaps
 ω = (v / L) · tan(δ)
 ```
 
-where `v` is speed, `L` is wheelbase, and `δ` is steering angle (clamped to ±maxSteering). Each frame: `heading += ω · dt`, then the rear axle advances along the new heading. No lateral slip.
+where `v` is speed, `L` is wheelbase, and `δ` is steering angle (clamped to ±`maxSteering`°). `maxSteering` is a one-sided limit — the wheel travels that many degrees left or right from centre, so total lock-to-lock is `maxSteering × 2`. Each frame: `heading += ω · dt`, then the rear axle advances along the new heading. No lateral slip.
+
+### Steering control loop
+
+The steering system is a **P controller** (proportional only) with a rate-limited actuator. Each frame:
+
+1. **Error** — `headingError = angleDiff(heading, desiredHeading)`
+2. **Command** — `targetSteering = clamp(headingError, ±maxSteering)`
+3. **Rate limit** — `steeringAngle` advances toward `targetSteering` by at most `effectiveSteeringRate × dt`
+
+There is no I or D term. The absence of a derivative means the wheel can overshoot the setpoint and reverse — this is intentional and contributes to the car's character.
+
+The three steering props operate in a pipeline:
+
+- **`maxSteering`** — the geometric ceiling on wheel travel. Sets the minimum turning radius at any speed (`r = wheelbase / tan(maxSteering)`). Does not change with speed.
+- **`steeringRate`** — how fast the wheel can physically move (degrees/s). This is the rate limiter on the actuator — the fastest the wheel will ever travel, regardless of how large the error is. Tune this at **low speed** where `twitchiness` has no effect.
+- **`twitchiness`** — a speed-sensitive scalar applied to `steeringRate` each frame:
+
+```
+effectiveSteeringRate = steeringRate × (1 − speedRatio × (1 − twitchiness))
+```
+
+At `twitchiness: 1` the scalar is always 1 — full `steeringRate` at any speed. At `twitchiness: 0` the rate drops to zero at max speed. `twitchiness` does **not** affect `maxSteering`; a stable car can still reach full lock, it just takes longer to get there. Tune this at **high speed** after `steeringRate` is set.
+
+**Tuning order:** set `steeringRate` by watching slow-speed corner entry, then dial `twitchiness` by watching the front wheel lines in the debug overlay during a high-speed path change. Think of `steeringRate` as how fast the driver's hands move, and `twitchiness` as how much they slow down at pace.
+
+| Scenario | What dominates |
+|---|---|
+| Slow speed, tight corner | `maxSteering` — is there enough lock? `steeringRate` barely matters since the wheel has time to catch up |
+| High speed, gradual curve | `twitchiness` — how quickly does the wheel respond to the path's gentle demand? |
+| High speed, sudden obstacle | All three — `twitchiness` limits how fast the wheel moves, `steeringRate` is the ceiling on that, and `maxSteering` is whether there's enough authority to make the turn at all |
+| Cornering slip / tail-happy | `steeringRate` × `twitchiness` together determine how quickly yaw rate builds, which is the forcing term driving the slip angle oscillator |
 
 ### Bézier paths
 

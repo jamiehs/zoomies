@@ -11,7 +11,7 @@ const DEFAULTS = {
   maxSpeed: 320,         // px/s
   acceleration: 220,     // px/s²
   brakeDecel: 480,       // px/s²
-  maxSteering: 35,       // degrees
+  maxSteering: 35,       // ± degrees from centre (total lock-to-lock = maxSteering × 2)
   steeringRate: 120,     // degrees/s — how fast the wheel turns
   twitchiness: 0.4, // 0–1: high-speed steering damping (0 = super stable, 1 = very twitchy)
   arrivalRadius: 144,    // ~3× car width — must be > min turning radius (≈ 46px)
@@ -20,6 +20,8 @@ const DEFAULTS = {
   slipDamping: 3,        // slip damper — ζ ≈ 0.34, underdamped with clear overshoot
   slipScale: 1.0,        // multiplier on the mark offset — increase to exaggerate the visual wiggle
   driveBias: 1.0,        // 0 = FWD, 1 = RWD, 0–1 = AWD (affects accel skidmarks)
+  aggression: 0.3,       // 0–1: how much the car follows the bezier path while braking (0 = careful/direct, 1 = committed/aggressive)
+                         // TODO: consolidate other aggression-flavoured behaviours under this prop (e.g. avoidance assertiveness, arrival overshoot tolerance)
   shadowCornerRadius: 4, // px — corner radius of the shadow rectangle (0 = sharp)
   color: '#e63946',
   // Exhaust afterfire flash
@@ -57,6 +59,7 @@ export class Car {
     this.slipDamping   = cfg.slipDamping
     this.slipScale          = cfg.slipScale
     this.driveBias          = cfg.driveBias
+    this.aggression         = cfg.aggression
     this.shadowCornerRadius = cfg.shadowCornerRadius
     this._slipAngle    = 0   // rear slip angle (rad); positive = rear slides right
     this._slipVel      = 0   // d(slipAngle)/dt
@@ -130,25 +133,25 @@ export class Car {
         y: sharedMid.y + (Math.random() - 0.5) * jitter,
       }
     } else {
-      const curve1 = (Math.random() - 0.5) * dist * 1.0
+      const curve1 = (Math.random() - 0.5) * dist * 0.65
       p1 = {
         x: p0.x + fx * dist * 0.33 + px * curve1,
         y: p0.y + fy * dist * 0.33 + py * curve1,
       }
     }
 
-    // p2: arrival — 25% chance of a wild approach angle (from side or behind),
+    // p2: arrival — 15% chance of a wild approach angle (from side or behind),
     // otherwise a moderate sweep independently randomised per car.
     let p2
-    if (Math.random() < 0.25) {
+    if (Math.random() < 0.15) {
       const approachAngle = Math.random() * Math.PI * 2
-      const approachDist  = dist * (0.3 + Math.random() * 0.4)
+      const approachDist  = dist * (0.2 + Math.random() * 0.25)
       p2 = {
         x: p3.x + Math.cos(approachAngle) * approachDist,
         y: p3.y + Math.sin(approachAngle) * approachDist,
       }
     } else {
-      const curve2 = (Math.random() - 0.5) * dist * 0.9
+      const curve2 = (Math.random() - 0.5) * dist * 0.55
       p2 = {
         x: p0.x + fx * dist * 0.67 + px * curve2,
         y: p0.y + fy * dist * 0.67 + py * curve2,
@@ -222,16 +225,35 @@ export class Car {
     }
 
     let steerX, steerY
-    if (this.path && this._pathT < 1) {
-      // Lookahead: aim a bit ahead on the curve for smooth steering
-      const lookahead = Math.min(this._pathT + 0.08, 1)
+    if (this.path && this._pathT < 1 && (!shouldBrake || this.aggression > 0)) {
+      // Speed-adaptive lookahead: faster = aim further ahead on the curve,
+      // reducing the heading error gain and damping path-following oscillation.
+      const speedRatioLA = clamp(this.speed / this.maxSpeed, 0, 1)
+      const lookaheadT   = 0.06 + speedRatioLA * 0.14   // 6% at rest → 20% at max speed
+      const lookahead    = Math.min(this._pathT + lookaheadT, 1)
       const pt = bezierPoint(this.path.p0, this.path.p1, this.path.p2, this.path.p3, lookahead)
       const dx = pt.x - this.x
       const dy = pt.y - this.y
-      const d = Math.sqrt(dx * dx + dy * dy) || 1
-      steerX = dx / d
-      steerY = dy / d
+      const d  = Math.sqrt(dx * dx + dy * dy) || 1
+      const bx = dx / d
+      const by = dy / d
+
+      if (shouldBrake && this.aggression < 1) {
+        // Blend toward direct target as aggression decreases.
+        // aggression=0: aim straight at target; aggression=1: fully committed to path.
+        const tx  = realDx / (realDist || 1)
+        const ty  = realDy / (realDist || 1)
+        steerX = tx + (bx - tx) * this.aggression
+        steerY = ty + (by - ty) * this.aggression
+        const sLen = Math.sqrt(steerX * steerX + steerY * steerY) || 1
+        steerX /= sLen
+        steerY /= sLen
+      } else {
+        steerX = bx
+        steerY = by
+      }
     } else {
+      // Past the path end or aggression=0 while braking: aim straight at target.
       steerX = realDx / (realDist || 1)
       steerY = realDy / (realDist || 1)
     }
@@ -244,8 +266,11 @@ export class Car {
       const avoid = this._avoidanceForce(others)
       const avoidLen = Math.sqrt(avoid.x * avoid.x + avoid.y * avoid.y)
       if (avoidLen > 0.001) {
-        steerX += avoid.x * 2.5
-        steerY += avoid.y * 2.5
+        // Reduce avoidance authority while braking so parked cars near the
+        // target zone don't repel the arriving car away from its destination.
+        const avoidWeight = shouldBrake ? 0.8 : 2.5
+        steerX += avoid.x * avoidWeight
+        steerY += avoid.y * avoidWeight
         avoiding = true
       }
     }
