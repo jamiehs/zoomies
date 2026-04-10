@@ -240,6 +240,162 @@ describe('driveTo', () => {
   })
 })
 
+// ---------- _emitSkidmarks ----------
+
+describe('_emitSkidmarks', () => {
+  it('stop type: emits segments when car._skidding is true', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100, heading: 0 })
+    car._skidding = true
+    car.speed = 200
+    driver._emitSkidmarks(car)  // coin flip (0.5 >= 0.5 → enabled); sets prev, no segment yet
+    driver._emitSkidmarks(car)  // prev exists → emits 2 stop segments
+    expect(driver._skidmarks.filter(s => s.type === 'stop').length).toBeGreaterThan(0)
+  })
+
+  it('bump type: fires when not skidding, was colliding, speed < 20', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100, heading: 0 })
+    car._skidding = false
+    car._wasColliding = true
+    car.speed = 5
+    driver._emitSkidmarks(car)
+    driver._emitSkidmarks(car)  // prev exists → 4 bump segments (all four wheels)
+    expect(driver._skidmarks.filter(s => s.type === 'bump').length).toBeGreaterThan(0)
+  })
+
+  it('turn type: fires when slip angle > 0.05 and speed > 60', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100, heading: 0 })
+    car._skidding = false
+    car._wasColliding = false
+    car._slipAngle = 0.15
+    car.speed = 100
+    driver._emitSkidmarks(car)
+    driver._emitSkidmarks(car)  // outer prev exists → outer segment emitted
+    expect(driver._skidmarks.filter(s => s.type === 'turn').length).toBeGreaterThan(0)
+  })
+
+  it('accel type: fires when speeding up between 10–100 px/s with a target', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100, heading: 0 })
+    car._skidding = false
+    car._wasColliding = false
+    car._slipAngle = 0
+    car.speed = 50
+    car.target = { x: 500, y: 100 }
+    driver._prevSpeed.set(car, 30)  // speed(50) > prevSpeed(30) → speeding = true
+    driver._emitSkidmarks(car)  // coin flip enabled; sets prev, no segment yet
+    driver._prevSpeed.set(car, 30)  // reset so next call also sees speeding = true
+    driver._emitSkidmarks(car)  // prev exists → emits 2 accel segments
+    expect(driver._skidmarks.filter(s => s.type === 'accel').length).toBeGreaterThan(0)
+  })
+
+  it('stop takes priority over turn when both conditions are met', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100, heading: 0 })
+    car._skidding = true     // stop
+    car._slipAngle = 0.2    // would be turn — lower priority
+    car.speed = 200
+    driver._emitSkidmarks(car)
+    driver._emitSkidmarks(car)
+    expect(driver._skidmarks.filter(s => s.type === 'stop').length).toBeGreaterThan(0)
+    expect(driver._skidmarks.filter(s => s.type === 'turn').length).toBe(0)
+  })
+
+  it('bump takes priority over accel when both conditions are met', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100, heading: 0 })
+    car._skidding = false
+    car._wasColliding = true  // bump (speed < 20 ✓)
+    car._slipAngle = 0
+    car.speed = 10
+    car.target = { x: 200, y: 100 }
+    driver._prevSpeed.set(car, 5)   // speeding = true → accel would qualify too
+    driver._emitSkidmarks(car)
+    driver._prevSpeed.set(car, 5)
+    driver._emitSkidmarks(car)
+    expect(driver._skidmarks.filter(s => s.type === 'bump').length).toBeGreaterThan(0)
+    expect(driver._skidmarks.filter(s => s.type === 'accel').length).toBe(0)
+  })
+
+  it('coin flip: Math.random < 0.5 suppresses all marks for the event', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100, heading: 0 })
+    car._skidding = true
+    car.speed = 200
+    vi.spyOn(Math, 'random').mockReturnValue(0.4)  // 0.4 < 0.5 → disabled
+    driver._emitSkidmarks(car)
+    driver._emitSkidmarks(car)
+    expect(driver._skidmarks.filter(s => s.type === 'stop').length).toBe(0)
+  })
+
+  it('inner wheel delay queue: no inner segments until 12 frames in', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100, heading: 0 })
+    car._skidding = false
+    car._wasColliding = false
+    car._slipAngle = 0.15
+    car.speed = 100
+    // Frames 1–11: queue fills to D=10; delayedPrev not yet set → no inner segments
+    for (let i = 0; i < 11; i++) driver._emitSkidmarks(car)
+    expect(driver._skidmarks.filter(s => s.isInner).length).toBe(0)
+    // Frame 12: delayedPrev was set on frame 11 → first inner segment emitted
+    driver._emitSkidmarks(car)
+    expect(driver._skidmarks.filter(s => s.isInner).length).toBeGreaterThan(0)
+  })
+
+  it('no active type clears turn state and emits nothing', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100, heading: 0 })
+    // Plant leftover turn state from a prior corner
+    driver._turnOuterPrev.set(car, { x: 90, y: 90 })
+    driver._turnInnerQueue.set(car, [{ x: 90, y: 90, slipAngle: 0.1 }])
+    car._skidding = false
+    car._wasColliding = false
+    car._slipAngle = 0  // no type active
+    car.speed = 0
+    driver._emitSkidmarks(car)
+    expect(driver._turnOuterPrev.has(car)).toBe(false)
+    expect(driver._turnInnerQueue.has(car)).toBe(false)
+    expect(driver._skidmarks.length).toBe(0)
+  })
+})
+
+// ---------- _resolveCollisions rotational impulse ----------
+
+describe('_resolveCollisions rotational impulse', () => {
+  it('side impact changes car headings', () => {
+    const driver = makeDriver({ count: 0 })
+    // a faces up (π/2), push direction is +x — cross product is non-zero → spin
+    const a = driver.addCar({ x: 0, y: 0, heading: Math.PI / 2 })
+    const b = driver.addCar({ x: 5, y: 0, heading: 0 })
+    const h0a = a.heading, h0b = b.heading
+    driver._resolveCollisions()
+    expect(Math.abs(a.heading - h0a) + Math.abs(b.heading - h0b)).toBeGreaterThan(0)
+  })
+
+  it('parked car (no target) rotates more than moving car (has target)', () => {
+    // Moving: torque * 0.33   Parked: torque * 1.0
+    const driver1 = makeDriver({ count: 0 })
+    const moving = driver1.addCar({ x: 0, y: 0, heading: Math.PI / 2 })
+    moving.target = { x: 1000, y: 0 }
+    driver1.addCar({ x: 5, y: 0, heading: 0 })
+
+    const driver2 = makeDriver({ count: 0 })
+    const parked = driver2.addCar({ x: 0, y: 0, heading: Math.PI / 2 })
+    // parked.target = null by default
+    driver2.addCar({ x: 5, y: 0, heading: 0 })
+
+    const h0moving = moving.heading
+    const h0parked = parked.heading
+    driver1._resolveCollisions()
+    driver2._resolveCollisions()
+
+    expect(Math.abs(parked.heading - h0parked)).toBeGreaterThan(Math.abs(moving.heading - h0moving))
+  })
+})
+
 // ---------- destroy ----------
 
 describe('destroy', () => {

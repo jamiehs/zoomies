@@ -1,4 +1,4 @@
-import { angleDiff, clamp, vec2, bezierPoint, bezierLength } from './utils.js'
+import { angleDiff, clamp, bezierPoint, bezierLength } from './utils.js'
 
 const DEG = Math.PI / 180
 
@@ -18,6 +18,7 @@ const DEFAULTS = {
   slipStiffness: 34,     // rear slip spring constant — ω_n = √34 ≈ 5.8 rad/s
   slipDamping: 3,        // slip damper — ζ ≈ 0.34, underdamped with clear overshoot
   slipScale: 1.0,        // multiplier on the mark offset — increase to exaggerate the visual wiggle
+  shadowCornerRadius: 4, // px — corner radius of the shadow rectangle (0 = sharp)
   color: '#e63946',
   // Exhaust afterfire flash
   exhaustPosition: null, // 'left' | 'right' | 'bothSides' | 'rear'
@@ -51,7 +52,8 @@ export class Car {
     this.skidThreshold = cfg.skidThreshold
     this.slipStiffness = cfg.slipStiffness
     this.slipDamping   = cfg.slipDamping
-    this.slipScale     = cfg.slipScale
+    this.slipScale          = cfg.slipScale
+    this.shadowCornerRadius = cfg.shadowCornerRadius
     this._slipAngle    = 0   // rear slip angle (rad); positive = rear slides right
     this._slipVel      = 0   // d(slipAngle)/dt
     this.color = cfg.color
@@ -88,14 +90,14 @@ export class Car {
     this._pathLen = 0             // approximate arc length
   }
 
-  driveTo(x, y) {
+  driveTo(x, y, sharedMid = null) {
     this.target = { x, y }
     this._cumulativeRotation = 0
     this._avoidSpeedFactor = 0.97 + Math.random() * 0.06  // 0.97–1.03
-    this._generatePath(x, y)
+    this._generatePath(x, y, sharedMid)
   }
 
-  _generatePath(tx, ty) {
+  _generatePath(tx, ty, sharedMid = null) {
     const p0 = { x: this.x, y: this.y }
     const p3 = { x: tx, y: ty }
 
@@ -108,22 +110,45 @@ export class Car {
       return
     }
 
-    // Perpendicular to the straight line
-    const px = -dy / dist
-    const py = dx / dist
+    // Forward and perpendicular unit vectors
+    const fx = dx / dist
+    const fy = dy / dist
+    const px = -fy
+    const py = fx
 
-    // Random curvature — each control point gets an independent offset
-    // for variety (arcs, S-curves, mild wiggles)
-    const curve1 = (Math.random() - 0.5) * dist * 0.6
-    const curve2 = (Math.random() - 0.5) * dist * 0.4
-
-    const p1 = {
-      x: p0.x + dx * 0.33 + px * curve1,
-      y: p0.y + dy * 0.33 + py * curve1,
+    // p1: if a shared midpoint is provided (fleet racing line), all cars funnel
+    // through that region with a small individual jitter. Otherwise pure random.
+    let p1
+    if (sharedMid) {
+      const jitter = dist * 0.12
+      p1 = {
+        x: sharedMid.x + (Math.random() - 0.5) * jitter,
+        y: sharedMid.y + (Math.random() - 0.5) * jitter,
+      }
+    } else {
+      const curve1 = (Math.random() - 0.5) * dist * 1.0
+      p1 = {
+        x: p0.x + fx * dist * 0.33 + px * curve1,
+        y: p0.y + fy * dist * 0.33 + py * curve1,
+      }
     }
-    const p2 = {
-      x: p0.x + dx * 0.67 + px * curve2,
-      y: p0.y + dy * 0.67 + py * curve2,
+
+    // p2: arrival — 25% chance of a wild approach angle (from side or behind),
+    // otherwise a moderate sweep independently randomised per car.
+    let p2
+    if (Math.random() < 0.25) {
+      const approachAngle = Math.random() * Math.PI * 2
+      const approachDist  = dist * (0.3 + Math.random() * 0.4)
+      p2 = {
+        x: p3.x + Math.cos(approachAngle) * approachDist,
+        y: p3.y + Math.sin(approachAngle) * approachDist,
+      }
+    } else {
+      const curve2 = (Math.random() - 0.5) * dist * 0.9
+      p2 = {
+        x: p0.x + fx * dist * 0.67 + px * curve2,
+        y: p0.y + fy * dist * 0.67 + py * curve2,
+      }
     }
 
     this.path = { p0, p1, p2, p3 }
@@ -211,7 +236,7 @@ export class Car {
 
     let avoiding = false
     this._debugAvoidTargets = []
-    if (!shouldBrake && !insideArrival) {
+    if (!insideArrival) {
       const avoid = this._avoidanceForce(others)
       const avoidLen = Math.sqrt(avoid.x * avoid.x + avoid.y * avoid.y)
       if (avoidLen > 0.001) {
@@ -226,8 +251,13 @@ export class Car {
     const headingError = angleDiff(this.heading, desiredHeading)
     this._debugDesiredHeading = desiredHeading
 
-    // Drive steering toward desired, clamped to maxSteering
-    const targetSteering = clamp(headingError, -this.maxSteering, this.maxSteering)
+    // Speed-sensitive steering: reduce max angle at high speed so fast cars
+    // don't snap into violent turns. At max speed the limit drops to ~35% of full lock.
+    const speedRatio = clamp(this.speed / this.maxSpeed, 0, 1)
+    const effectiveMaxSteering = this.maxSteering * (1 - speedRatio * 0.65)
+
+    // Drive steering toward desired, clamped to speed-adjusted maxSteering
+    const targetSteering = clamp(headingError, -effectiveMaxSteering, effectiveMaxSteering)
     const steerDelta = clamp(
       targetSteering - this.steeringAngle,
       -this.steeringRate * dt,
@@ -280,15 +310,14 @@ export class Car {
     } else {
       this._skidding = false
       this.speed = Math.min(effectiveMax, this.speed + this.acceleration * dt)
-      if (avoiding) this.speed *= this._avoidSpeedFactor
     }
 
     // Skid: allow mild steering overshoot for a drift look
     if (this._skidding) {
       this.steeringAngle = clamp(
         this.steeringAngle * 1.4,
-        -this.maxSteering * 1.4,
-        this.maxSteering * 1.4,
+        -effectiveMaxSteering * 1.4,
+        effectiveMaxSteering * 1.4,
       )
     }
 
@@ -383,7 +412,7 @@ export class Car {
     return { x: fx, y: fy }
   }
 
-  /** @param {CanvasRenderingContext2D} ctx @param {{ shadow?: boolean, shadowOpacity?: number, shadowBlur?: number, shadowOffsetX?: number, shadowOffsetY?: number }} renderOpts */
+  /** @param {CanvasRenderingContext2D} ctx @param {{ shadow?: boolean, shadowOpacity?: number, shadowBlur?: number, shadowOffsetX?: number, shadowOffsetY?: number, shadowCornerRadius?: number }} renderOpts */
   render(ctx, renderOpts = {}) {
     const w = this.width
     const h = this.height
@@ -401,7 +430,14 @@ export class Car {
       ctx.rotate(this.heading)
       ctx.filter = `blur(${blur}px)`
       ctx.fillStyle = `rgba(0,0,0,${opacity})`
-      ctx.fillRect(-w / 2, -h / 2, w, h)
+      const sr = this.shadowCornerRadius
+      if (sr > 0) {
+        ctx.beginPath()
+        ctx.roundRect(-w / 2, -h / 2, w, h, sr)
+        ctx.fill()
+      } else {
+        ctx.fillRect(-w / 2, -h / 2, w, h)
+      }
       ctx.filter = 'none'
       ctx.restore()
     }

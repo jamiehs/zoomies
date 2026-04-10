@@ -3,6 +3,7 @@
  * in radians, in the range (−π, π].
  */
 export function angleDiff(a, b) {
+  // TODO(perf): while loops → single modulo: ((b-a+Math.PI) % (2*Math.PI)) - Math.PI
   let d = b - a
   while (d > Math.PI) d -= 2 * Math.PI
   while (d <= -Math.PI) d += 2 * Math.PI

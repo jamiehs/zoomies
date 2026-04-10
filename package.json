@@ -5,13 +5,14 @@
   "main": "./dist/car-driver.iife.js",
   "module": "./dist/car-driver.es.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@vitest/ui": "^4.1.4",
     "jsdom": "^29.0.2",
     "vite": "^5.0.0",
     "vitest": "^4.1.3"

@@ -82,11 +82,11 @@ export class CarDriver {
     this._onResize = this._resize.bind(this)
     window.addEventListener('resize', this._onResize)
 
-    // Click binding
+    // Click binding — pass clickTarget: null to disable
     this._onClick = (e) => {
       this.driveTo(e.pageX, e.pageY)
     }
-    clickTarget.addEventListener('click', this._onClick)
+    if (clickTarget) clickTarget.addEventListener('click', this._onClick)
 
     // Spawn initial cars in a cluster with aligned headings
     const spawnX = window.innerWidth * 0.8
@@ -128,10 +128,26 @@ export class CarDriver {
       return db - da
     })
 
+    // Shared racing-line midpoint: from the fleet's average position toward the
+    // destination, laterally offset so all cars funnel through the same region
+    // before spreading to their individual targets.
+    const avgX = this.cars.reduce((s, c) => s + c.x, 0) / n
+    const avgY = this.cars.reduce((s, c) => s + c.y, 0) / n
+    const jDx = x - avgX
+    const jDy = y - avgY
+    const jDist = Math.sqrt(jDx * jDx + jDy * jDy) || 1
+    const jPx = -jDy / jDist  // perpendicular to fleet→target
+    const jPy =  jDx / jDist
+    const lateral = (Math.random() - 0.5) * jDist * 0.7
+    const sharedMid = {
+      x: avgX + jDx * 0.45 + jPx * lateral,
+      y: avgY + jDy * 0.45 + jPy * lateral,
+    }
+
     // Sort cars by maxSpeed (fastest first) — fastest car gets furthest target
     const sorted = [...this.cars].sort((a, b) => b.maxSpeed - a.maxSpeed)
     for (let i = 0; i < n; i++) {
-      sorted[i].driveTo(targets[i].x, targets[i].y)
+      sorted[i].driveTo(targets[i].x, targets[i].y, sharedMid)
     }
 
     // Store scatter zone for debug rendering
@@ -323,6 +339,7 @@ export class CarDriver {
    */
   _resolveCollisions() {
     const cars = this.cars
+    // TODO(perf): O(n²) — add spatial grid/quadtree for large car counts (n > ~20)
     // Reset collision flag each frame
     for (const car of cars) car._wasColliding = false
     for (let i = 0; i < cars.length; i++) {
@@ -372,7 +389,7 @@ export class CarDriver {
       cancelAnimationFrame(this._rafId)
       this._rafId = null
     }
-    this._clickTarget.removeEventListener('click', this._onClick)
+    if (this._clickTarget) this._clickTarget.removeEventListener('click', this._onClick)
     window.removeEventListener('resize', this._onResize)
     this._canvas.remove()
     this._skidCanvas.remove()
@@ -410,6 +427,8 @@ export class CarDriver {
 
     // Emit new skidmark segments; clean up prev-refs for removed cars
     for (const car of this.cars) this._emitSkidmarks(car)
+    // TODO(perf): _loop scans maps every frame to cull removed cars; removeCar()
+    // could push stale refs onto a cleanup queue instead
     for (const car of this._stopAccelPrev.keys()) {
       if (!this.cars.includes(car)) {
         this._stopAccelPrev.delete(car)
@@ -618,6 +637,8 @@ export class CarDriver {
     }
 
     // Skidmark segment count breakdown by type
+    // TODO(perf): scanning _skidmarks (up to 6000 entries) every debug frame;
+    // track counts incrementally in _pushSkid() instead
     const counts = { accel: 0, turn: 0, stop: 0, bump: 0 }
     for (const s of this._skidmarks) counts[s.type]++
     ctx.font = '11px monospace'

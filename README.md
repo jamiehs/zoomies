@@ -102,6 +102,7 @@ All options are optional — sensible defaults are provided.
 | `height` | 24 | Car body height in px |
 | `tireWidth` | 4 | Skidmark line width in px |
 | `sprite` | `null` | URL string or `HTMLImageElement`; falls back to a colored rectangle |
+| `shadowCornerRadius` | `4` | Corner radius for the shadow rectangle in px; set to `0` for a square shadow |
 
 ### Exhaust afterfire
 

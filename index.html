@@ -254,6 +254,7 @@
     height: 24 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— body height in px<br />
     tireWidth: 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— skidmark line width in px<br />
     sprite: null &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— URL string or HTMLImageElement<br />
+    shadowCornerRadius: 4 — shadow rect corner radius in px (0 = square)<br />
     <br />
     <span style="color:#e9c46a">// Exhaust afterfire</span><br />
     exhaustPosition: null &nbsp;&nbsp;— 'left' | 'right' | 'bothSides' | 'rear'<br />
@@ -505,6 +506,8 @@
   // Audi
   driver.addCar({
     color: 'rgb(193, 16, 16)',
+    height: 32,
+    wheelbase: 42,
     maxSteering: 20,
     steeringRate: 80,
     acceleration: 190,
@@ -512,10 +515,12 @@
     exhaustPosition: 'right',
     exhaustOffset: 0.38,
     exhaustRadius: 5,
-    sprite: './public/a901.png'
+    sprite: 'a901.png'
   })
   driver.addCar({
     color: 'rgb(201, 176, 32)',
+    height: 32,
+    wheelbase: 42,
     maxSteering: 25,
     steeringRate: 90,
     acceleration: 200,
@@ -523,23 +528,24 @@
     exhaustPosition: 'right',
     exhaustOffset: 0.38,
     exhaustRadius: 5,
-    sprite: './public/a9037.png'
+    sprite: 'a9037.png'
   })
 
   // Nissan
   driver.addCar({
     color: '#0000ff',
+    height: 32,
+    wheelbase: 48,
     maxSpeed: 550,
     acceleration: 100,
     maxSteering: 30,
     steeringRate: 100,
-    wheelbase: 40,
     tireWidth: 6,
     slipScale: 1.5,
     exhaustPosition: 'rear',
     exhaustOffset: 0.6,
     exhaustRadius: 4,
-    sprite: './public/zxt.png'
+    sprite: 'zxt.png'
   })
   
 

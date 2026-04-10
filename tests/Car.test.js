@@ -286,3 +286,179 @@ describe('coasting', () => {
     expect(car.speed).toBe(0)
   })
 })
+
+describe('slip angle oscillator', () => {
+  it('at rest: spring pulls slip angle toward zero', () => {
+    const car = makeCar(0, 0)
+    car.speed = 0
+    car._slipAngle = 0.2
+    car._slipVel = 0
+    for (let i = 0; i < 20; i++) car._applyBicycleModel(0.05)
+    expect(Math.abs(car._slipAngle)).toBeLessThan(0.2)
+  })
+
+  it('at rest: slip velocity driven by spring force on first step', () => {
+    const car = makeCar(0, 0)
+    car.speed = 0
+    car._slipAngle = 0.1
+    car._slipVel = 0
+    car._applyBicycleModel(0.01)
+    // spring = -34 * 0.1 = -3.4; damping = 0; vel += -3.4 * 0.01 = -0.034
+    expect(car._slipVel).toBeCloseTo(-0.034, 4)
+  })
+
+  it('at rest: position and heading do not change', () => {
+    const car = makeCar(5, 5)
+    car.speed = 0
+    car._slipAngle = 0.3
+    car._applyBicycleModel(0.1)
+    expect(car.x).toBe(5)
+    expect(car.y).toBe(5)
+    expect(car.heading).toBe(0)
+  })
+
+  it('moving: yaw rate excites slip angle', () => {
+    const car = makeCar(0, 0, { heading: 0 })
+    car.speed = 100
+    car.steeringAngle = 0.3
+    car._slipAngle = 0
+    car._slipVel = 0
+    car._applyBicycleModel(0.05)
+    // angularVel = (100/32)*tan(0.3) ≈ 9.72 rad/s — forces slip vel non-zero
+    expect(car._slipAngle).not.toBe(0)
+    expect(Math.abs(car._slipVel)).toBeGreaterThan(0)
+  })
+})
+
+describe('orbitDetection flag', () => {
+  it('orbitDetection=false: cumulativeRotation stays 0 and orbiting stays false', () => {
+    const car = makeCar(0, 0, { heading: 0 })
+    car.driveTo(500, 0)
+    car.orbitDetection = false
+    car._cumulativeRotation = 99  // would trigger if detection were on
+    car.speed = 100
+    car.update(0.016, [])
+    expect(car._cumulativeRotation).toBe(0)
+    expect(car._orbiting).toBe(false)
+  })
+})
+
+describe('exhaust afterfire', () => {
+  it('timer fires and starts frame sequence when speed > 50', () => {
+    const car = makeCar(0, 0, { exhaustPosition: 'rear', exhaustInterval: 1.0 })
+    car.speed = 100
+    car._exhaustTimer = 0.01  // expires after dt=0.1
+    car.update(0.1, [])
+    // Frame was set to 0 then incremented once in the same tick
+    expect(car._exhaustFrame).toBe(1)
+  })
+
+  it('frame advances each tick', () => {
+    const car = makeCar(0, 0, { exhaustPosition: 'rear' })
+    car._exhaustFrame = 1
+    car.speed = 0  // timer branch skipped; only frame advancement runs
+    car.update(0.016, [])
+    expect(car._exhaustFrame).toBe(2)
+  })
+
+  it('frame resets to -1 after 5 ticks', () => {
+    const car = makeCar(0, 0, { exhaustPosition: 'rear' })
+    car._exhaustFrame = 4
+    car.speed = 0
+    car.update(0.016, [])
+    expect(car._exhaustFrame).toBe(-1)
+  })
+
+  it('timer does not fire when speed <= 50', () => {
+    const car = makeCar(0, 0, { exhaustPosition: 'rear' })
+    car._exhaustTimer = -100  // deeply expired
+    car.speed = 30
+    car.update(0.016, [])
+    expect(car._exhaustFrame).toBe(-1)
+  })
+
+  it('timer does not fire without exhaustPosition', () => {
+    const car = makeCar(0, 0)  // exhaustPosition = null
+    car._exhaustTimer = -100
+    car.speed = 100
+    car.update(0.016, [])
+    expect(car._exhaustFrame).toBe(-1)
+  })
+
+  it('timer resets with randomised interval after firing', () => {
+    const car = makeCar(0, 0, { exhaustPosition: 'rear', exhaustInterval: 1.0 })
+    car.speed = 100
+    car._exhaustTimer = 0.01
+    car.update(0.1, [])
+    // Math.random = 0.5 → new timer = 1.0 * (1 + 0.5) = 1.5
+    expect(car._exhaustTimer).toBeCloseTo(1.5, 1)
+  })
+})
+
+describe('proximityBoost', () => {
+  it('lead car reaches higher speed when trailing car is nearby (near maxSpeed)', () => {
+    // Without boost: speed(325) > maxSpeed(320) → eases off
+    const noBoost = makeCar(0, 0, { heading: 0 })
+    noBoost.driveTo(10000, 0)
+    noBoost.speed = 325
+    noBoost.proximityBoost = false
+    noBoost.update(0.016, [])
+
+    // With boost: effectiveMax rises above 325 → car accelerates instead
+    const boosted = makeCar(0, 0, { heading: 0 })
+    boosted.driveTo(10000, 0)
+    boosted.speed = 325
+    const trailer = makeCar(40, 0, { heading: 0 })
+    trailer.driveTo(500000, 0)  // very far from its target → trailer is the follower
+    boosted.update(0.016, [trailer])
+
+    expect(boosted.speed).toBeGreaterThan(noBoost.speed)
+  })
+
+  it('trailing car does not get boost (only lead car does)', () => {
+    const lead = makeCar(0, 0, { heading: 0 })
+    lead.driveTo(100, 0)    // close to target
+
+    const trail = makeCar(40, 0, { heading: 0 })
+    trail.driveTo(500000, 0)  // far from target
+    trail.speed = 50
+    const speedBefore = trail.speed
+
+    // trail's myDist(499960) > lead's otherDist(100) → trail is NOT the lead → no boost
+    trail.update(0.016, [lead])
+    expect(trail.speed).toBeGreaterThanOrEqual(speedBefore)
+  })
+
+  it('colliding-state boost (0.7×) yields higher speed than normal boost (0.3×)', () => {
+    // speed=370: above non-colliding effectiveMax(~362) but below colliding effectiveMax(~419)
+    const nonColliding = makeCar(0, 0, { heading: 0 })
+    nonColliding.driveTo(10000, 0)
+    nonColliding.speed = 370
+    nonColliding._wasColliding = false
+    const trail1 = makeCar(40, 0, { heading: 0 })
+    trail1.driveTo(500000, 0)
+    nonColliding.update(0.016, [trail1])
+
+    const colliding = makeCar(0, 0, { heading: 0 })
+    colliding.driveTo(10000, 0)
+    colliding.speed = 370
+    colliding._wasColliding = true
+    const trail2 = makeCar(40, 0, { heading: 0 })
+    trail2.driveTo(500000, 0)
+    colliding.update(0.016, [trail2])
+
+    expect(colliding.speed).toBeGreaterThan(nonColliding.speed)
+  })
+
+  it('proximityBoost=false: speed eases off normally with no boost', () => {
+    const lead = makeCar(0, 0, { heading: 0 })
+    lead.driveTo(10000, 0)
+    lead.speed = 325  // above maxSpeed → would ease off without boost
+    lead.proximityBoost = false
+    const trailer = makeCar(40, 0, { heading: 0 })
+    trailer.driveTo(500000, 0)
+    lead.update(0.016, [trailer])
+    // No boost → effectiveMax = 320 → speed eases toward 320
+    expect(lead.speed).toBeLessThan(325)
+  })
+})
