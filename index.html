@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>zoomies demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #2e2e2e;
+      color: #f0ede8;
+      font-family: 'Georgia', serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Simulated race-car site layout with wide margins */
+    .page {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 80px 20px 100vh;
+    }
+
+    h1 {
+      font-size: 2.8rem;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.4em;
+      color: #e63946;
+    }
+
+    h2 {
+      font-size: 1.4rem;
+      margin: 2em 0 0.6em;
+      color: #e9c46a;
+    }
+
+    p {
+      line-height: 1.75;
+      margin-bottom: 1em;
+      color: #ccc;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid #333;
+      margin: 2em 0;
+    }
+
+    #coords {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #555;
+      pointer-events: none;
+      z-index: 10000;
+    }
+
+    #controls {
+      display: none;
+      font-family: monospace;
+      font-size: 0.78rem;
+      color: #aaa;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 18px 20px;
+      margin: 2em 0;
+      columns: 2;
+      column-gap: 28px;
+    }
+    .ctrl-group {
+      break-inside: avoid;
+      margin-bottom: 18px;
+    }
+    .ctrl-group:last-child { margin-bottom: 0; }
+    .ctrl-group-label {
+      color: #e9c46a;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 4px;
+    }
+    .ctrl-item {
+      margin-bottom: 10px;
+    }
+    .ctrl-item:last-child { margin-bottom: 0; }
+    .ctrl-name {
+      color: #888;
+      margin-bottom: 3px;
+    }
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ctrl-row input[type="range"] {
+      flex: 1;
+      min-width: 0;
+    }
+    .ctrl-val {
+      color: #f0ede8;
+      min-width: 36px;
+      text-align: right;
+    }
+    .ctrl-bool {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      color: #aaa;
+    }
+    .ctrl-bool:last-child { margin-bottom: 0; }
+    .ctrl-bool input { cursor: pointer; width: 13px; height: 13px; }
+  </style>
+  <script type="module" crossorigin src="/zoomies/assets/index-DIkLVaav.js"></script>
+</head>
+<body>
+
+<div class="page">
+  <h1>Misbehaved Race Cars</h1>
+  <p>
+    Click anywhere on the page and watch the cars race to your cursor.
+    Each car uses a realistic rear-axle bicycle model — it steers, accelerates,
+    brakes, drifts, leaves skidmarks, and backfires. Press
+    <strong>Ctrl+Shift+Space</strong> to toggle the debug overlay.
+  </p>
+
+  <div id="controls">
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Navigation</div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Arrival radius</div>
+        <div class="ctrl-row">
+          <input type="range" id="arrivalSlider" min="48" max="240" value="144" step="4" />
+          <span class="ctrl-val"><span id="arrivalVal">144</span>px</span>
+        </div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Scatter radius</div>
+        <div class="ctrl-row">
+          <input type="range" id="scatterSlider" min="0.3" max="2.0" value="1.4" step="0.05" />
+          <span class="ctrl-val"><span id="scatterVal">1.40</span>×</span>
+        </div>
+      </div>
+      <label class="ctrl-bool">
+        <input type="checkbox" id="orbitCheck" checked />
+        Orbit detection
+      </label>
+      <label class="ctrl-bool">
+        <input type="checkbox" id="proximityCheck" checked />
+        Proximity boost
+      </label>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Slip angle</div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Stiffness</div>
+        <div class="ctrl-row">
+          <input type="range" id="slipStiffSlider" min="5" max="80" value="34" step="1" />
+          <span class="ctrl-val" id="slipStiffVal">34</span>
+        </div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Damping</div>
+        <div class="ctrl-row">
+          <input type="range" id="slipDampSlider" min="0.5" max="15" value="3" step="0.5" />
+          <span class="ctrl-val" id="slipDampVal">3.0</span>
+        </div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Scale</div>
+        <div class="ctrl-row">
+          <input type="range" id="slipScaleSlider" min="0.5" max="8" value="1" step="0.5" />
+          <span class="ctrl-val"><span id="slipScaleVal">1.0</span>×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Shadows</div>
+      <label class="ctrl-bool">
+        <input type="checkbox" id="shadowCheck" checked />
+        Enabled
+      </label>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Blur</div>
+        <div class="ctrl-row">
+          <input type="range" id="shadowBlurSlider" min="0" max="10" value="4.5" step="0.5" />
+          <span class="ctrl-val"><span id="shadowBlurVal">4.5</span>px</span>
+        </div>
+      </div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Opacity</div>
+        <div class="ctrl-row">
+          <input type="range" id="shadowOpSlider" min="0" max="1" value="0.4" step="0.05" />
+          <span class="ctrl-val" id="shadowOpVal">0.40</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Exhaust</div>
+      <div class="ctrl-item">
+        <div class="ctrl-name">Pop interval</div>
+        <div class="ctrl-row">
+          <input type="range" id="exhaustIntSlider" min="0.2" max="3.0" value="0.9" step="0.1" />
+          <span class="ctrl-val"><span id="exhaustIntVal">0.9</span>s</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <h2>Programmatic API</h2>
+  <p>
+    Open the browser console and try:
+  </p>
+  <p style="font-family:monospace; font-size:0.85em; line-height:2">
+    <span style="color:#2a9d8f">driver.driveTo(400, 300)</span> — moves all cars<br />
+    <span style="color:#2a9d8f">driver.cars[0].driveTo(200, 200)</span> — moves only car 0<br />
+    <span style="color:#2a9d8f">driver.addCar({ color: '#ff0', maxSpeed: 600 })</span> — adds a car<br />
+    <span style="color:#2a9d8f">driver.removeCar(driver.cars[0])</span> — removes a car<br />
+    <span style="color:#2a9d8f">driver.debug = true</span> — toggle debug overlay<br />
+    <span style="color:#2a9d8f">driver.skidOpacity = 0.15</span> — adjust skidmark darkness<br />
+    <span style="color:#2a9d8f">driver.shadow = false</span> — disable shadows
+  </p>
+
+  <h2>Car options</h2>
+  <p>
+    Pass any of these to <code style="color:#2a9d8f">driver.addCar({ … })</code>:
+  </p>
+  <p style="font-family:monospace; font-size:0.82em; line-height:2; color:#aaa">
+    <span style="color:#e9c46a">// Physics</span><br />
+    maxSpeed: 320 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px/s (±20% random variation per car)<br />
+    acceleration: 220 &nbsp;— px/s²<br />
+    brakes: 0.5 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— 0 = poor (~60 px/s²), 0.5 = default (~480 px/s²), 1 = ABS (~900 px/s²)<br />
+    wheelbase: 32 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px; also scales visual body length<br />
+    maxSteering: 35 &nbsp;&nbsp;&nbsp;— ± degrees from centre (lock-to-lock = maxSteering × 2)<br />
+    steeringRate: 120 &nbsp;— degrees/s the wheel can turn<br />
+    twitchiness: 0.4 &nbsp;&nbsp;— 0 = super stable (rate drops to zero at top speed), 1 = very twitchy (full rate always)<br />
+    arrivalRadius: 144 — px; brake-to-stop zone around target<br />
+    skidThreshold: 150 — px/s; speed above which braking produces a skid<br />
+    grip: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— 0–1 tire grip; scales skidThreshold, slipStiffness, slipScale offset, and brakeDecel (min 30%)<br />
+    slipStiffness: 34 &nbsp;— rear grip spring; ω_n = √k ≈ 5.8 rad/s<br />
+    slipDamping: 3 &nbsp;&nbsp;&nbsp;&nbsp;— ζ ≈ 0.34; underdamped, visible overshoot on corner exit<br />
+    slipScale: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;— mark offset multiplier; increase to exaggerate the wiggle<br />
+    driveBias: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;— 0 = FWD, 1 = RWD, 0–1 = AWD (affects accel skidmarks)<br />
+    aggression: 0.3 &nbsp;&nbsp;&nbsp;— 0 = careful (aims straight at target while braking), 1 = committed (follows bezier all the way in)<br />
+    <br />
+    <span style="color:#e9c46a">// Appearance</span><br />
+    color: '#e63946' &nbsp;&nbsp;— any CSS color<br />
+    height: 24 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— body height in px<br />
+    tireWidth: 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— skidmark line width in px<br />
+    sprite: null &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— URL string or HTMLImageElement<br />
+    shadowCornerRadius: 4 — shadow rect corner radius in px (0 = square)<br />
+    <br />
+    <span style="color:#e9c46a">// Exhaust afterfire</span><br />
+    exhaustPosition: null &nbsp;&nbsp;— 'left' | 'right' | 'bothSides' | 'rear' | null (null = disabled)<br />
+    exhaustOffset: 0.5 &nbsp;&nbsp;&nbsp;&nbsp;— 0–1 along the chosen edge (0 = front/left corner, 1 = rear/right corner)<br />
+    exhaustRadius: 6 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— base flame radius in px; scales length and width proportionally<br />
+    exhaustInterval: 0.9 &nbsp;&nbsp;— min seconds between events (actual = interval × 1–2×); 40% chance double pop, 15% triple<br />
+    exhaustAngle: 90 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— side exhausts only: 90 = perpendicular to car side, up to 170 = swept back toward tail<br />
+    exhaustInset: 0 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px inboard from the car edge (side: toward centre; rear: tucked into bodywork)<br />
+    <br />
+    <span style="color:#e9c46a">// Behaviour flags</span><br />
+    orbitDetection: true &nbsp;&nbsp;— detect and escape infinite-circle situations<br />
+    proximityBoost: true &nbsp;&nbsp;— lead car gets a speed boost to pull away from a trailer<br />
+    <br />
+    <span style="color:#e9c46a">// Initial state</span><br />
+    x, y &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— spawn position (default: random on canvas)<br />
+    heading &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— initial heading in radians (default: random)
+  </p>
+
+  <h2>CarDriver options</h2>
+  <p style="font-family:monospace; font-size:0.82em; line-height:2; color:#aaa">
+    count: 3 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— cars spawned on init<br />
+    zIndex: 9999 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— canvas z-index<br />
+    clickTarget: document — element to bind clicks on; null to disable<br />
+    debug: false &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— show debug overlay (Ctrl+Shift+Space toggles at runtime)<br />
+    skidOpacity: 0.08 &nbsp;&nbsp;&nbsp;— global skidmark opacity multiplier<br />
+    shadow: true<br />
+    shadowOpacity: 0.40<br />
+    shadowBlur: 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px<br />
+    shadowOffsetX: 4 &nbsp;&nbsp;&nbsp;&nbsp;— page-space offset (not car-space)<br />
+    shadowOffsetY: 6
+  </p>
+
+  <hr />
+
+  <h2>Steering — the bicycle model</h2>
+  <p>
+    Each car is a <em>kinematic rear-axle bicycle model</em>: the two rear
+    wheels are collapsed into a single pivot point, and only the front axle
+    steers. The heading changes at a rate determined by vehicle speed, wheelbase,
+    and steering angle:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    ω = (v / L) · tan(δ)
+  </p>
+  <p>
+    where <em>v</em> is speed in px/s, <em>L</em> is the wheelbase, and
+    <em>δ</em> is the front steering angle (clamped to ±maxSteering°). Each
+    frame the heading is updated by <em>ω · dt</em>, then the rear axle moves
+    forward along the new heading. There is no lateral slip — the rear wheels
+    always track exactly along the heading vector. The visual body length is
+    derived as <em>wheelbase × 1.5</em> unless overridden.
+  </p>
+
+  <h2>Bézier paths</h2>
+  <p>
+    When a target is assigned, a cubic Bézier curve is generated from the car's
+    current position to the destination. The two control points are offset
+    perpendicular to the straight line by random amounts (up to 60% and 40% of
+    the distance respectively), producing arcs and S-curves. The car tracks a
+    lookahead point 8% ahead of its current progress along the curve, giving
+    smooth anticipatory steering rather than reactive correction. The lookahead
+    is speed-adaptive: 6% of the path at rest, rising to 20% at top speed, so
+    fast cars anticipate direction changes earlier.
+  </p>
+
+  <h2>Speed &amp; alignment scaling</h2>
+  <p>
+    A car pointing away from its target would overshoot if it ran at full
+    speed, so target speed is scaled by how well the car is aligned:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    v<sub>eff</sub> = v<sub>max</sub> · clamp(floor + (1 − floor) · cos(θ<sub>err</sub>), floor, 1)
+  </p>
+  <p>
+    The floor is normally 0.3 (so even a fully sideways car keeps 30% speed to
+    help it turn), but rises to 0.7 during an active collision so the car is
+    never artificially slowed by a heading knocked out of alignment by a bump.
+  </p>
+
+  <h2>Speed &amp; braking</h2>
+  <p>
+    Three props set the speed envelope; <code>grip</code> then scales two of them:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    brakeDecel &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 60 + brakes × 840<br />
+    effectiveBrakeDecel = brakeDecel × (0.3 + 0.7 × grip)<br />
+    brakingDist &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= v² / (2 × effectiveBrakeDecel)<br />
+    skidding &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= speed &gt; skidThreshold × grip
+  </p>
+  <p>
+    <strong>maxSpeed</strong> is the per-car ceiling, with ±20% random variation at
+    construction. Alignment scaling reduces it proportionally to heading error
+    (floor 0.3), so a sideways car still keeps 30% speed to aid turning.
+    Proximity boost can push a lead car briefly above it.
+    <br /><br />
+    <strong>acceleration</strong> is a constant px/s² ramp with no traction limit —
+    it runs at the same rate regardless of speed or steering angle.
+    <br /><br />
+    <strong>brakes</strong> maps 0–1 onto a deceleration range:
+    <code>0</code> ≈ 60 px/s² (barely slows),
+    <code>0.5</code> ≈ 480 px/s² (default),
+    <code>1</code> ≈ 900 px/s² (near-instant).
+    Use raw <code>brakeDecel</code> (px/s²) for precise control.
+    <br /><br />
+    <strong>grip</strong> is a single 0–1 knob that touches four values simultaneously:
+    effective braking force, skid trigger threshold, rear slip spring stiffness,
+    and skidmark fan width. Lowering grip makes the car skid sooner, oversteer
+    more, leave wider marks, and stop in a longer distance.
+  </p>
+  <table style="width:100%; border-collapse:collapse; font-size:0.85em; margin-bottom:1.5em">
+    <thead><tr style="border-bottom:1px solid #444">
+      <th style="text-align:left; padding:6px 8px">Scenario</th>
+      <th style="text-align:left; padding:6px 8px">What dominates</th>
+    </tr></thead>
+    <tbody>
+      <tr><td style="padding:6px 8px">Car slides past target</td><td style="padding:6px 8px"><code>brakes</code> too low — increase it or reduce <code>maxSpeed</code></td></tr>
+      <tr style="background:rgba(255,255,255,0.03)"><td style="padding:6px 8px">Stops too abruptly, no character</td><td style="padding:6px 8px"><code>brakes</code> too high; or lower <code>grip</code> to soften effective decel</td></tr>
+      <tr><td style="padding:6px 8px">Skids at very low speed</td><td style="padding:6px 8px"><code>grip</code> too low — it multiplies <code>skidThreshold</code> down; raise <code>grip</code> or <code>skidThreshold</code></td></tr>
+      <tr style="background:rgba(255,255,255,0.03)"><td style="padding:6px 8px">No skids at all</td><td style="padding:6px 8px"><code>maxSpeed</code> below <code>skidThreshold × grip</code>; lower <code>grip</code> or <code>skidThreshold</code></td></tr>
+      <tr><td style="padding:6px 8px">Dramatic rear oversteer / drift</td><td style="padding:6px 8px">Low <code>grip</code> weakens the slip spring; pair with high <code>slipScale</code> for wider marks</td></tr>
+      <tr style="background:rgba(255,255,255,0.03)"><td style="padding:6px 8px">Car won't reach top speed</td><td style="padding:6px 8px">Alignment scaling is capping it — large heading error; reduce <code>aggression</code></td></tr>
+      <tr><td style="padding:6px 8px">Acceleration feels sluggish</td><td style="padding:6px 8px"><code>acceleration</code> too low; or <code>maxSpeed</code> very high making the ramp long</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Braking &amp; arrival</h2>
+  <p>
+    The stopping distance at any given speed is:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    d<sub>stop</sub> = v² / (2 · effectiveBrakeDecel)
+  </p>
+  <p>
+    The car begins braking when its distance to the target falls inside
+    <em>d<sub>stop</sub> × 1.2</em> — the 20% margin absorbs the fact that
+    the car is still turning while decelerating. Once inside the
+    <em>arrival radius</em> (default 144 px, adjustable via the slider),
+    the car brakes to a dead stop while avoidance steering remains active —
+    cars nudge each other apart even while parking.
+    Speed below 10 px/s clears the target.
+  </p>
+
+  <h2>Orbit detection &amp; escape</h2>
+  <p>
+    A car near its target can sometimes end up circling indefinitely —
+    particularly one with a wide turning radius arriving at an awkward angle.
+    To detect this, cumulative angular displacement is tracked whenever the
+    car is within <em>5 × width</em> of the target:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    Σ|ω · dt| &gt; 2π → orbiting = true
+  </p>
+  <p>
+    Once flagged, the car brakes at 60% of normal deceleration until it stops,
+    then clears its target. The accumulator resets whenever the car leaves the
+    near-finish zone.
+  </p>
+
+  <h2>Collision resolution</h2>
+  <p>
+    After every update tick, each overlapping pair of cars is hard-separated
+    along the axis between their centres by exactly the overlap distance:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    a.pos -= n̂ · overlap/2 &nbsp;&nbsp; b.pos += n̂ · overlap/2
+  </p>
+  <p>
+    A rotational impulse is also applied proportional to the cross product of
+    the push direction and each car's forward axis — a side-on hit spins the
+    car, a head-on hit doesn't. Moving cars receive 15% of the torque that a
+    parked car would, keeping the fleet from spinning wildly mid-race.
+  </p>
+
+  <h2>Proximity boost</h2>
+  <p>
+    When two cars are within 1.5 car-widths of each other, the one that is
+    <em>closer to its target</em> (the lead car) receives a forward speed
+    boost to pull it clear:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    boost = urgency × (0.7 if colliding, else 0.3)
+  </p>
+  <p>
+    where <em>urgency</em> scales linearly from 0 at 1.5 widths to 1 at
+    contact. The trailing car is never slowed — this is a push-forward, not a
+    push-back. The higher multiplier during an active collision ensures the lead
+    car escapes cleanly rather than being dragged along.
+  </p>
+
+  <h2>Rear slip angle</h2>
+  <p>
+    Turn skidmarks are driven by a rear slip angle <em>α</em> modelled as a
+    2nd-order damped oscillator:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    α̈ = ω − k·α − c·α̇
+  </p>
+  <p>
+    where <em>ω</em> is the yaw rate from the bicycle model (the cornering
+    forcing), <em>k</em> is <code>slipStiffness</code>, and <em>c</em> is
+    <code>slipDamping</code>. At the defaults, the damping ratio
+    <em>ζ = c / (2√k) ≈ 0.34</em> — clearly underdamped, so when the car
+    exits a corner the rear steps out and oscillates back through zero before settling.
+    That single overshoot is the snap-back wiggle you see in the turn
+    skidmarks. Higher <em>ζ</em> eliminates the overshoot entirely; lower
+    values produce multiple oscillations.
+  </p>
+  <p>
+    Turn marks fire when <em>|α| &gt; 0.05 rad</em> (~3°). The rear
+    contact-patch positions are offset laterally by <em>sin(α)</em>, so marks
+    fan outward mid-corner and trace the oscillation arc on exit — rather than
+    a geometrically perfect curve.
+  </p>
+
+  <h2>Avoidance steering</h2>
+  <p>
+    Each car computes a repulsion vector from neighbours within 0.66 × car-width:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    f = Σ (n̂<sub>away</sub> · strength) &nbsp; where strength = (r<sub>min</sub> − d) / r<sub>min</sub>
+  </p>
+  <p>
+    This force is blended into the desired heading with a weight of 2.5 normally,
+    reduced to 0.8 while braking (so parked cars near the target don't push an
+    arriving car off-course), and kept active inside the arrival radius so cars
+    can nudge each other apart while parking. The steering rate then clamps
+    actual wheel movement to ±120°/s so the car can never snap direction instantly.
+  </p>
+
+  <h2>Target scatter &amp; assignment</h2>
+  <p>
+    Clicking the page doesn't send all cars to the same point — targets are
+    scattered around the click within a radius that grows with car count.
+    Points are placed via rejection sampling with a minimum separation of 2.5
+    car-widths, so targets are spread far enough apart that cars don't all enter
+    arrival mode simultaneously. Cars are then
+    sorted by <em>maxSpeed</em> and assigned targets sorted by distance from
+    centre — fastest car gets the furthest target, so the fleet fans out rather
+    than converging.
+  </p>
+
+  <h2>Skidmarks</h2>
+  <p>
+    Four types of skidmark are classified each frame, in priority order.
+    Each type activates a 50/50 coin flip per event — half of all skid events
+    produce no marks at all, giving the organic variation you see on a real
+    track surface.
+  </p>
+  <p>
+    <strong style="color:#ff1493">Stop</strong> — braking above
+    <em>skidThreshold × grip</em> px/s. All four wheels — a random lock bias
+    is chosen per event: 50% balanced (all equal), 25% front-heavy
+    (front full, rear at 25% opacity), 25% rear-heavy (rear full, front at 25%
+    opacity). Simulates unpredictable brake balance under hard stops.<br />
+    <strong style="color:#663399">Accel</strong> — wheel-spin on launch while
+    actually gaining speed (10–100 px/s). Driven wheels only: rear marks at
+    <em>driveBias</em> weight, front marks at <em>1 − driveBias</em>. RWD
+    leaves rear marks only; FWD leaves front marks only; AWD blends both.
+    Opacity scales as <em>1 − (v − 10) / 90</em> — darkest at launch,
+    invisible at 100 px/s.<br />
+    <strong style="color:#00cccc">Turn</strong> — rear slip angle above 0.05 rad
+    at over 60 px/s (see slip angle section above). Opacity scales with slip
+    magnitude. The inner tyre starts 10 frames later and ends 10 frames earlier
+    than the outer — a naturally shorter inner streak — and renders at 20% of
+    the outer's opacity. Contact patches are offset by the slip angle so marks
+    deviate from a perfect arc.<br />
+    <strong style="color:#ff6600">Bump</strong> — any collision while not
+    hard-braking, at any speed. All four wheels, half opacity. A fast hit
+    produces a long scrub; a slow nudge produces a short scuff.
+  </p>
+  <p>
+    Marks are drawn once to a dedicated persistent canvas behind the cars and
+    never redrawn, so they accumulate indefinitely at zero per-frame cost.
+    The global <em>skidOpacity</em> multiplier scales all marks uniformly;
+    in debug mode it is bypassed so individual baked alphas are visible.
+    The <em>tireWidth</em> per car controls the line width of its marks.
+  </p>
+
+  <h2>Shadows</h2>
+  <p>
+    Each car casts a soft blurred shadow drawn in a separate canvas transform
+    before the body, so the offset is in <em>page-space</em> — not car-local
+    space. A car rotated 180° still casts its shadow in the same screen
+    direction, simulating a fixed overhead light source. Set
+    <code style="color:#2a9d8f">shadowOffsetX: 0, shadowOffsetY: 0</code>
+    for a shadow directly underneath with no directional component.
+  </p>
+
+  <h2>Sprites &amp; exhaust</h2>
+  <p>
+    Any car can display a sprite image instead of the default colored rectangle.
+    Pass a URL string or an <code>HTMLImageElement</code> as <code>sprite</code>;
+    the image is drawn with high-quality smoothing enabled so it stays crisp at
+    any rotation. Exhaust flames render <em>under</em> the car body so they
+    appear to emerge from behind bodywork, wings, and diffusers.
+  </p>
+  <p>
+    When <code>exhaustPosition</code> is set, a teardrop-shaped afterfire flame
+    fires periodically while the car is moving above 50 px/s. Each event has a
+    40% chance of a double pop and a 15% chance of a triple — each pop in a burst
+    re-rolls its size and shape independently. The flame is white-hot at the base,
+    transitioning through bright yellow and deep orange to a transparent tip.
+  </p>
+  <p>
+    Use <code>exhaustAngle</code> (90–170°) to sweep side exhaust tips rearward,
+    and <code>exhaustInset</code> to tuck the emission point inboard from the car
+    edge — useful for exhausts that exit beneath a wing or body panel. Setting
+    <code>exhaustPosition: null</code> (the default) disables afterfire entirely
+    with no overhead.
+  </p>
+</div>
+
+
+<div id="coords">click anywhere to drive</div>
+
+
+</body>
+</html>
