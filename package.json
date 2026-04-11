@@ -9,7 +9,7 @@
     "type": "git",
     "url": "git+https://github.com/jamiehs/zoomies.git"
   },
-  "homepage": "https://github.com/jamiehs/zoomies#readme",
+  "homepage": "https://jamiehs.github.io/zoomies/",
   "bugs": {
     "url": "https://github.com/jamiehs/zoomies/issues"
   },
@@ -31,7 +31,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release:patch": "npm test && npm version patch && git push origin main --tags",
+    "release:minor": "npm test && npm version minor && git push origin main --tags",
+    "release:major": "npm test && npm version major && git push origin main --tags"
   },
   "devDependencies": {
     "@vitest/ui": "^4.1.4",
