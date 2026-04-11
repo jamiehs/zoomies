@@ -127,7 +127,7 @@
     Click anywhere on the page and watch the cars race to your cursor.
     Each car uses a realistic rear-axle bicycle model — it steers, accelerates,
     brakes, drifts, leaves skidmarks, and backfires. Press
-    <strong>Shift+Space</strong> to toggle the debug overlay.
+    <strong>Ctrl+Shift+Space</strong> to toggle the debug overlay.
   </p>
 
   <div id="controls">
@@ -318,7 +318,9 @@
     perpendicular to the straight line by random amounts (up to 60% and 40% of
     the distance respectively), producing arcs and S-curves. The car tracks a
     lookahead point 8% ahead of its current progress along the curve, giving
-    smooth anticipatory steering rather than reactive correction.
+    smooth anticipatory steering rather than reactive correction. The lookahead
+    is speed-adaptive: 6% of the path at rest, rising to 20% at top speed, so
+    fast cars anticipate direction changes earlier.
   </p>
 
   <h2>Speed &amp; alignment scaling</h2>
@@ -335,20 +337,66 @@
     never artificially slowed by a heading knocked out of alignment by a bump.
   </p>
 
-  <h2>Braking &amp; arrival</h2>
+  <h2>Speed &amp; braking</h2>
   <p>
-    Deceleration is fixed at 480 px/s². From those kinematics the stopping
-    distance at any given speed is:
+    Three props set the speed envelope; <code>grip</code> then scales two of them:
   </p>
   <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
-    d<sub>stop</sub> = v² / (2 · a<sub>brake</sub>)
+    brakeDecel &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 60 + brakes × 840<br />
+    effectiveBrakeDecel = brakeDecel × (0.3 + 0.7 × grip)<br />
+    brakingDist &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= v² / (2 × effectiveBrakeDecel)<br />
+    skidding &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= speed &gt; skidThreshold × grip
+  </p>
+  <p>
+    <strong>maxSpeed</strong> is the per-car ceiling, with ±20% random variation at
+    construction. Alignment scaling reduces it proportionally to heading error
+    (floor 0.3), so a sideways car still keeps 30% speed to aid turning.
+    Proximity boost can push a lead car briefly above it.
+    <br /><br />
+    <strong>acceleration</strong> is a constant px/s² ramp with no traction limit —
+    it runs at the same rate regardless of speed or steering angle.
+    <br /><br />
+    <strong>brakes</strong> maps 0–1 onto a deceleration range:
+    <code>0</code> ≈ 60 px/s² (barely slows),
+    <code>0.5</code> ≈ 480 px/s² (default),
+    <code>1</code> ≈ 900 px/s² (near-instant).
+    Use raw <code>brakeDecel</code> (px/s²) for precise control.
+    <br /><br />
+    <strong>grip</strong> is a single 0–1 knob that touches four values simultaneously:
+    effective braking force, skid trigger threshold, rear slip spring stiffness,
+    and skidmark fan width. Lowering grip makes the car skid sooner, oversteer
+    more, leave wider marks, and stop in a longer distance.
+  </p>
+  <table style="width:100%; border-collapse:collapse; font-size:0.85em; margin-bottom:1.5em">
+    <thead><tr style="border-bottom:1px solid #444">
+      <th style="text-align:left; padding:6px 8px">Scenario</th>
+      <th style="text-align:left; padding:6px 8px">What dominates</th>
+    </tr></thead>
+    <tbody>
+      <tr><td style="padding:6px 8px">Car slides past target</td><td style="padding:6px 8px"><code>brakes</code> too low — increase it or reduce <code>maxSpeed</code></td></tr>
+      <tr style="background:rgba(255,255,255,0.03)"><td style="padding:6px 8px">Stops too abruptly, no character</td><td style="padding:6px 8px"><code>brakes</code> too high; or lower <code>grip</code> to soften effective decel</td></tr>
+      <tr><td style="padding:6px 8px">Skids at very low speed</td><td style="padding:6px 8px"><code>grip</code> too low — it multiplies <code>skidThreshold</code> down; raise <code>grip</code> or <code>skidThreshold</code></td></tr>
+      <tr style="background:rgba(255,255,255,0.03)"><td style="padding:6px 8px">No skids at all</td><td style="padding:6px 8px"><code>maxSpeed</code> below <code>skidThreshold × grip</code>; lower <code>grip</code> or <code>skidThreshold</code></td></tr>
+      <tr><td style="padding:6px 8px">Dramatic rear oversteer / drift</td><td style="padding:6px 8px">Low <code>grip</code> weakens the slip spring; pair with high <code>slipScale</code> for wider marks</td></tr>
+      <tr style="background:rgba(255,255,255,0.03)"><td style="padding:6px 8px">Car won't reach top speed</td><td style="padding:6px 8px">Alignment scaling is capping it — large heading error; reduce <code>aggression</code></td></tr>
+      <tr><td style="padding:6px 8px">Acceleration feels sluggish</td><td style="padding:6px 8px"><code>acceleration</code> too low; or <code>maxSpeed</code> very high making the ramp long</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Braking &amp; arrival</h2>
+  <p>
+    The stopping distance at any given speed is:
+  </p>
+  <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
+    d<sub>stop</sub> = v² / (2 · effectiveBrakeDecel)
   </p>
   <p>
     The car begins braking when its distance to the target falls inside
     <em>d<sub>stop</sub> × 1.2</em> — the 20% margin absorbs the fact that
     the car is still turning while decelerating. Once inside the
     <em>arrival radius</em> (default 144 px, adjustable via the slider),
-    steering and avoidance cut out entirely and the car brakes to a dead stop.
+    the car brakes to a dead stop while avoidance steering remains active —
+    cars nudge each other apart even while parking.
     Speed below 10 px/s clears the target.
   </p>
 
@@ -426,24 +474,26 @@
 
   <h2>Avoidance steering</h2>
   <p>
-    While not braking or inside the arrival zone, each car computes a repulsion
-    vector from neighbours within 0.66 × car-width:
+    Each car computes a repulsion vector from neighbours within 0.66 × car-width:
   </p>
   <p style="font-family:monospace; color:#2a9d8f; padding-left:1em">
     f = Σ (n̂<sub>away</sub> · strength) &nbsp; where strength = (r<sub>min</sub> − d) / r<sub>min</sub>
   </p>
   <p>
-    This force is blended into the desired heading with a weight of 2.5, then
-    the steering rate clamps the actual wheel movement to ±120°/s so the car
-    can never snap direction instantly.
+    This force is blended into the desired heading with a weight of 2.5 normally,
+    reduced to 0.8 while braking (so parked cars near the target don't push an
+    arriving car off-course), and kept active inside the arrival radius so cars
+    can nudge each other apart while parking. The steering rate then clamps
+    actual wheel movement to ±120°/s so the car can never snap direction instantly.
   </p>
 
   <h2>Target scatter &amp; assignment</h2>
   <p>
     Clicking the page doesn't send all cars to the same point — targets are
     scattered around the click within a radius that grows with car count.
-    Points are placed via rejection sampling with a minimum separation of 1.5
-    car-widths, so targets never stack on top of each other. Cars are then
+    Points are placed via rejection sampling with a minimum separation of 2.5
+    car-widths, so targets are spread far enough apart that cars don't all enter
+    arrival mode simultaneously. Cars are then
     sorted by <em>maxSpeed</em> and assigned targets sorted by distance from
     centre — fastest car gets the furthest target, so the fleet fans out rather
     than converging.
@@ -457,11 +507,17 @@
     track surface.
   </p>
   <p>
-    <strong style="color:#ff1493">Stop</strong> — braking above 150 px/s.
-    Both rear tyres, full opacity.<br />
+    <strong style="color:#ff1493">Stop</strong> — braking above
+    <em>skidThreshold × grip</em> px/s. All four wheels — a random lock bias
+    is chosen per event: 50% balanced (all equal), 25% front-heavy
+    (front full, rear at 25% opacity), 25% rear-heavy (rear full, front at 25%
+    opacity). Simulates unpredictable brake balance under hard stops.<br />
     <strong style="color:#663399">Accel</strong> — wheel-spin on launch while
-    actually gaining speed (10–100 px/s). Opacity scales as
-    <em>1 − (v − 10) / 90</em> — darkest at launch, invisible at 100 px/s.<br />
+    actually gaining speed (10–100 px/s). Driven wheels only: rear marks at
+    <em>driveBias</em> weight, front marks at <em>1 − driveBias</em>. RWD
+    leaves rear marks only; FWD leaves front marks only; AWD blends both.
+    Opacity scales as <em>1 − (v − 10) / 90</em> — darkest at launch,
+    invisible at 100 px/s.<br />
     <strong style="color:#00cccc">Turn</strong> — rear slip angle above 0.05 rad
     at over 60 px/s (see slip angle section above). Opacity scales with slip
     magnitude. The inner tyre starts 10 frames later and ends 10 frames earlier
@@ -576,9 +632,9 @@
 
   const controlsPanel = document.getElementById('controls')
 
-  // Shift+Space toggles debug overlay + controls panel
+  // Ctrl+Ctrl+Shift+Space toggles debug overlay + controls panel
   document.addEventListener('keydown', (e) => {
-    if (e.shiftKey && e.code === 'Space') {
+    if (e.ctrlKey && e.shiftKey && e.code === 'Space') {
       e.preventDefault()
       driver.debug = !driver.debug
       controlsPanel.style.display = driver.debug ? 'block' : 'none'

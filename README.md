@@ -55,7 +55,7 @@ new CarDriver({
   shadowOffsetY: 6,
 
   // Debug
-  debug: false,           // Shift+Space also toggles at runtime
+  debug: false,           // Ctrl+Shift+Space also toggles at runtime
 })
 ```
 
@@ -68,7 +68,7 @@ new CarDriver({
 | `driver.removeCar(car)` | Remove a car |
 | `driver.cars` | Array of `Car` instances |
 | `driver.destroy()` | Remove canvas and all event listeners |
-| `driver.debug` | Toggle debug overlay (also Shift+Space) |
+| `driver.debug` | Toggle debug overlay (also Ctrl+Shift+Space) |
 | `driver.skidOpacity` | Adjust skidmark opacity live |
 | `driver.shadow` / `driver.shadowBlur` / etc. | Adjust shadow live |
 
@@ -108,7 +108,7 @@ All options are optional — sensible defaults are provided.
 
 ### Exhaust afterfire
 
-When `exhaustPosition` is set, a brief yellow flash fires periodically while the car is moving above 50 px/s. The interval is `exhaustInterval × (1–2)`, so the default 2.2 s setting fires every 2.2–4.4 s.
+When `exhaustPosition` is set, a brief yellow flash fires periodically while the car is moving above 50 px/s. The interval is `exhaustInterval × (1–2)`, so the default 0.9 s setting fires every 0.9–1.8 s.
 
 | Option | Default | Description |
 |---|---|---|
@@ -175,7 +175,7 @@ At `twitchiness: 1` the scalar is always 1 — full `steeringRate` at any speed.
 
 ### Bézier paths
 
-On each new target, a cubic Bézier is generated from the car's position to the destination. Control points are offset perpendicular to the straight line by random amounts (up to 60% and 40% of the total distance), producing arcs and S-curves. The car tracks a lookahead point 8% ahead of its current arc progress for smooth anticipatory steering.
+On each new target, a cubic Bézier is generated from the car's position to the destination. Control points are offset perpendicular to the straight line by random amounts (up to 60% and 40% of the total distance), producing arcs and S-curves. The car tracks a speed-adaptive lookahead point ahead of its current arc progress — 6% at rest, rising to 20% at top speed — so fast cars anticipate direction changes earlier and don't oscillate chasing a point too close to their nose.
 
 ### Speed & alignment scaling
 
@@ -187,9 +187,37 @@ v_eff = v_max · clamp(floor + (1 − floor) · cos(θ_err), floor, 1)
 
 The floor is 0.3 normally, rising to 0.7 during an active collision so a bumped car isn't artificially slowed.
 
+### Speed & braking
+
+Three props set the speed envelope; `grip` then scales two of them:
+
+```
+brakeDecel          = 60 + brakes × 840
+effectiveBrakeDecel = brakeDecel × (0.3 + 0.7 × grip)
+brakingDist         = v² / (2 × effectiveBrakeDecel)
+skidding            = speed > skidThreshold × grip
+```
+
+- **`maxSpeed`** — the per-car ceiling, with ±20% random variation applied at construction. The car never actually reaches this in a straight line because alignment scaling reduces target speed proportionally to heading error (floor 0.3, so even a sideways car keeps 30% to aid turning). Proximity boost can push a lead car briefly above it.
+- **`acceleration`** — a constant px/s² ramp. There is no traction limit on acceleration; it runs at the same rate regardless of speed or steering angle.
+- **`brakes`** — maps 0–1 onto a deceleration range: `0` ≈ 60 px/s² (barely slows), `0.5` ≈ 480 px/s² (default), `1` ≈ 900 px/s² (near-instant). Use raw `brakeDecel` (px/s²) for precise control.
+- **`grip`** — a single 0–1 knob that touches four values simultaneously: effective braking force (`brakeDecel × (0.3 + 0.7 × grip)`), skid trigger threshold (`skidThreshold × grip`), rear slip spring stiffness (`slipStiffness × grip`), and skidmark fan width (`slipScale / grip`). Lowering grip makes the car skid sooner, oversteer more, leave wider marks, and stop in a longer distance.
+
+**Tuning order:** set `maxSpeed` for the car's character, then `brakes` so stopping distance feels right (the debug overlay shows the arrival radius — braking should begin just outside it), then `grip` to dial skid frequency and oversteer character. Adjust `slipScale` last; it is purely visual with no physics effect.
+
+| Scenario | What dominates |
+|---|---|
+| Car slides past target | `brakes` too low — stopping distance exceeds the approach gap; increase `brakes` or reduce `maxSpeed` |
+| Stops too abruptly, no character | `brakes` too high — reduce it, or lower `grip` to soften effective decel |
+| Skids at very low speed | `grip` too low — it multiplies `skidThreshold` down; raise `grip` or raise `skidThreshold` directly |
+| No skids at all | `maxSpeed` is below `skidThreshold × grip`; lower `grip` or lower `skidThreshold` |
+| Dramatic rear oversteer / drift | Low `grip` weakens the slip spring; pair with high `slipScale` for wider marks |
+| Car won't reach top speed | Alignment scaling is capping it — large heading error from tight bezier; reduce `aggression` or widen the path |
+| Acceleration feels sluggish | `acceleration` too low; or `maxSpeed` very high making the ramp long |
+
 ### Braking & arrival
 
-Stopping distance at any speed: `d_stop = v² / (2 · a_brake)`. Braking begins when the car is within `d_stop × 1.2` of its target. Inside the arrival radius, steering and avoidance cut out; the car brakes to a dead stop.
+Stopping distance at any speed: `d_stop = v² / (2 · effectiveBrakeDecel)`. Braking begins when the car is within `d_stop × 1.2` of its target. Inside the arrival radius, the car brakes to a dead stop while avoidance steering remains active — cars will nudge each other apart even while parking.
 
 ### Orbit detection
 
@@ -215,7 +243,7 @@ where `ω` is the current yaw rate (the cornering forcing), `k` is `slipStiffnes
 
 ### Avoidance steering
 
-A repulsion vector from neighbours within `0.66 × width` is blended into the desired heading with weight 2.5. Steering rate caps actual wheel movement at ±120°/s.
+A repulsion vector from neighbours within `0.66 × width` is blended into the desired heading. Weight is 2.5 normally, 0.8 while braking (so nearby parked cars don't push an arriving car away from its target), and reduced but still active inside the arrival radius so cars nudge apart while parking. Steering rate caps actual wheel movement at ±120°/s.
 
 ---
 
@@ -225,8 +253,8 @@ Four types, evaluated in priority order each frame. Marks are drawn once to a pe
 
 | Type | Trigger | Wheels | Alpha |
 |---|---|---|---|
-| **Stop** | Braking above 150 px/s | Both rear | 1.0 |
-| **Accel** | Speed 10–100 px/s while gaining speed | Both rear | `1 − (v − 10) / 90` (fades as speed rises) |
+| **Stop** | Braking above `skidThreshold × grip` px/s | All four — random lock bias per event: 50% balanced, 25% front-heavy (fa=1.0, ra=0.25), 25% rear-heavy (fa=0.25, ra=1.0) | 1.0 × axle bias weight |
+| **Accel** | Speed 10–100 px/s while gaining speed | Driven wheels only — rear at `driveBias` weight, front at `1 − driveBias`; RWD = rear only, FWD = front only, AWD = both | `1 − (v − 10) / 90` (fades as speed rises) |
 | **Turn** | Steering > 65% lock at > 100 px/s | Outer rear (solid), inner rear (20% alpha, 10-frame delayed start) | Proportional to lock angle × 0.5 |
 | **Bump** | Near-stopped car nudged by collision | All four | 0.5 |
 
@@ -244,7 +272,7 @@ Set `shadowOffsetX: 0, shadowOffsetY: 0` for a shadow directly underneath (no di
 
 ## Debug overlay
 
-Press **Shift+Space** (or set `driver.debug = true`) to enable:
+Press **Ctrl+Shift+Space** (or set `driver.debug = true`) to enable:
 
 - Bezier path curves and control points, tinted per car
 - Avoidance radius circle per car
@@ -264,5 +292,5 @@ In debug mode, `skidOpacity` is bypassed and marks render at their raw baked alp
 ```bash
 npm run dev    # Vite dev server
 npm run build  # Outputs dist/car-driver.es.js and dist/car-driver.iife.js
-npm test       # Vitest (83 tests)
+npm test       # Vitest (109 tests)
 ```
