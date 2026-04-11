@@ -1,9 +1,9 @@
-# car-driver
+# zoomies
 
 Drop animated top-down race cars into any web page. Cars drive to wherever the user clicks, avoid each other, and move with realistic physics — rear-axle bicycle steering, acceleration, braking, skidmarks, exhaust flashes, and soft shadows.
 
 ```js
-import { CarDriver } from 'car-driver'
+import { CarDriver } from '@jamiehs/zoomies'
 
 const driver = new CarDriver({ skidOpacity: 0.08, shadowBlur: 4 })
 
@@ -20,13 +20,13 @@ driver.cars[0].driveTo(200, 200) // one car
 ## Installation
 
 ```bash
-npm install car-driver
+npm install @jamiehs/zoomies
 ```
 
 Or drop the IIFE build straight into a `<script>` tag:
 
 ```html
-<script src="dist/car-driver.iife.js"></script>
+<script src="dist/zoomies.iife.js"></script>
 <script>
   const driver = new CarDriver()
 </script>
@@ -291,6 +291,6 @@ In debug mode, `skidOpacity` is bypassed and marks render at their raw baked alp
 
 ```bash
 npm run dev    # Vite dev server
-npm run build  # Outputs dist/car-driver.es.js and dist/car-driver.iife.js
+npm run build  # Outputs dist/zoomies.es.js and dist/zoomies.iife.js
 npm test       # Vitest (109 tests)
 ```

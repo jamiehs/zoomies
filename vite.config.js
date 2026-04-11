@@ -5,7 +5,7 @@ export default defineConfig({
     lib: {
       entry: 'src/index.js',
       name: 'CarDriver',
-      fileName: 'car-driver',
+      fileName: 'zoomies',
       formats: ['es', 'iife'],
     },
   },

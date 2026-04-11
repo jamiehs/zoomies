@@ -1,9 +1,31 @@
 {
-  "name": "car-driver",
+  "name": "@jamiehs/zoomies",
   "version": "0.1.0",
+  "description": "Drop a fleet of misbehaved top-down race cars onto any web page. Click anywhere — they'll get there. Eventually.",
+  "keywords": ["cars", "animation", "canvas", "racing", "interactive", "physics"],
+  "license": "MIT",
+  "author": "Jamie Hamel-Smith <jamie3d@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jamiehs/zoomies.git"
+  },
+  "homepage": "https://github.com/jamiehs/zoomies#readme",
+  "bugs": {
+    "url": "https://github.com/jamiehs/zoomies/issues"
+  },
   "type": "module",
-  "main": "./dist/car-driver.iife.js",
-  "module": "./dist/car-driver.es.js",
+  "main": "./dist/zoomies.iife.js",
+  "module": "./dist/zoomies.es.js",
+  "exports": {
+    ".": {
+      "import": "./dist/zoomies.es.js",
+      "default": "./dist/zoomies.iife.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
