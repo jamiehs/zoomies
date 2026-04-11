@@ -241,10 +241,16 @@ export class Car {
       this._pathT = clamp(Math.max(distanceT, travelT), this._pathT, 1)
     }
 
-    let steerX, steerY
-    if (this.path && this._pathT < 1 && (!shouldBrake || this.aggression > 0)) {
-      // Speed-adaptive lookahead: faster = aim further ahead on the curve,
-      // reducing the heading error gain and damping path-following oscillation.
+    // Compute bezier lookahead direction — shared by path following and steering scaling.
+    // bx/by default to aiming straight at the target when no active path.
+    let bx = realDx / (realDist || 1)
+    let by = realDy / (realDist || 1)
+    // bezierAlignment: 1 = car heading matches bezier direction, 0 = fully sideways.
+    // Drives adaptive aggression damping and steering boost — when the car is
+    // oscillating it drops naturally, collapsing the boost and self-damping the weave.
+    let bezierAlignment = 1
+
+    if (this.path && this._pathT < 1) {
       const speedRatioLA = clamp(this.speed / this.maxSpeed, 0, 1)
       const lookaheadT   = 0.06 + speedRatioLA * 0.14   // 6% at rest → 20% at max speed
       const lookahead    = Math.min(this._pathT + lookaheadT, 1)
@@ -252,16 +258,22 @@ export class Car {
       const dx = pt.x - this.x
       const dy = pt.y - this.y
       const d  = Math.sqrt(dx * dx + dy * dy) || 1
-      const bx = dx / d
-      const by = dy / d
+      bx = dx / d
+      by = dy / d
+      bezierAlignment = Math.max(0, Math.cos(angleDiff(this.heading, Math.atan2(by, bx))))
+    }
 
+    let steerX, steerY
+    if (this.path && this._pathT < 1 && (!shouldBrake || this.aggression > 0)) {
       if (shouldBrake && this.aggression < 1) {
         // Blend toward direct target as aggression decreases.
-        // aggression=0: aim straight at target; aggression=1: fully committed to path.
+        // Dampen aggression by bezierAlignment so oscillating/sideways cars aim
+        // directly at the target instead of amplifying the weave.
+        const effectiveAggression = this.aggression * bezierAlignment
         const tx  = realDx / (realDist || 1)
         const ty  = realDy / (realDist || 1)
-        steerX = tx + (bx - tx) * this.aggression
-        steerY = ty + (by - ty) * this.aggression
+        steerX = tx + (bx - tx) * effectiveAggression
+        steerY = ty + (by - ty) * effectiveAggression
         const sLen = Math.sqrt(steerX * steerX + steerY * steerY) || 1
         steerX /= sLen
         steerY /= sLen
@@ -297,14 +309,16 @@ export class Car {
     const headingError = angleDiff(this.heading, desiredHeading)
     this._debugDesiredHeading = desiredHeading
 
-    // Speed-sensitive steering: limit how fast the wheel can move at high speed
-    // so fast cars can't snap to full lock instantly, but can still hold full
-    // lock in a sustained corner. This preserves alignFactor and slip dynamics.
+    // Aggressive cars steer faster and wider — unconditionally, so sharp bezier
+    // turns don't create a catch-22 where misalignment collapses the very steering
+    // authority needed to regain alignment. Oscillation damping is handled separately
+    // in the steer direction blend above (via effectiveAggression * bezierAlignment).
     const speedRatio = clamp(this.speed / this.maxSpeed, 0, 1)
-    const effectiveSteeringRate = this.steeringRate * (1 - speedRatio * (1 - this.twitchiness))
+    const effectiveMaxSteering  = this.maxSteering * (1 + this.aggression * 0.4)
+    const effectiveSteeringRate = this.steeringRate * (1 - speedRatio * (1 - this.twitchiness)) * (1 + this.aggression * 0.6)
 
-    // Drive steering toward desired, clamped to maxSteering
-    const targetSteering = clamp(headingError, -this.maxSteering, this.maxSteering)
+    // Drive steering toward desired, clamped to effectiveMaxSteering
+    const targetSteering = clamp(headingError, -effectiveMaxSteering, effectiveMaxSteering)
     const steerDelta = clamp(
       targetSteering - this.steeringAngle,
       -effectiveSteeringRate * dt,
@@ -316,7 +330,7 @@ export class Car {
     // from the target so the car can tighten its turn instead of overshooting.
     // But don't penalize alignment when in a collision (heading gets knocked around)
     const alignment = Math.cos(headingError)
-    const alignFloor = this._wasColliding ? 0.7 : 0.3
+    const alignFloor = this._wasColliding ? 0.7 : 0.6
     const alignFactor = clamp(alignFloor + (1 - alignFloor) * alignment, alignFloor, 1)
 
     // Proximity response: when very close to another car, the lead car
@@ -353,7 +367,7 @@ export class Car {
     } else if (this.speed > effectiveMax) {
       // Too fast for current heading error — ease off
       this._skidding = false
-      this.speed = Math.max(effectiveMax, this.speed - effectiveBrakeDecel * 0.5 * dt)
+      this.speed = Math.max(effectiveMax, this.speed - effectiveBrakeDecel * 0.05 * dt)
     } else {
       this._skidding = false
       this.speed = Math.min(effectiveMax, this.speed + this.acceleration * dt)

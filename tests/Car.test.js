@@ -136,12 +136,12 @@ describe('alignment-based speed scaling', () => {
     const aligned = makeCar(0, 0, { heading: 0 })
     aligned.driveTo(1000, 0)
     aligned.speed = 0
-    for (let i = 0; i < 10; i++) aligned.update(0.05, [])
+    for (let i = 0; i < 30; i++) aligned.update(0.05, [])
 
     const misaligned = makeCar(0, 0, { heading: Math.PI })
     misaligned.driveTo(1000, 0)
     misaligned.speed = 0
-    for (let i = 0; i < 10; i++) misaligned.update(0.05, [])
+    for (let i = 0; i < 30; i++) misaligned.update(0.05, [])
 
     expect(aligned.speed).toBeGreaterThan(misaligned.speed)
   })
