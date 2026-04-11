@@ -278,13 +278,17 @@ export class CarDriver {
 
     if (type === 'bump') {
       const prev = this._bumpPrev.get(car)
-      if (prev) {
+      const minStep = car.tireWidth * 2
+      const moved = prev ? Math.hypot(rlx - prev.rlx, rly - prev.rly) : Infinity
+      if (prev && moved >= minStep) {
         this._pushSkid({ x1: prev.flx, y1: prev.fly, x2: flx, y2: fly, type, alpha: bumpAlpha, tw })
         this._pushSkid({ x1: prev.frx, y1: prev.fry, x2: frx, y2: fry, type, alpha: bumpAlpha, tw })
         this._pushSkid({ x1: prev.rlx, y1: prev.rly, x2: rlx, y2: rly, type, alpha: bumpAlpha, tw })
         this._pushSkid({ x1: prev.rrx, y1: prev.rry, x2: rrx, y2: rry, type, alpha: bumpAlpha, tw })
+        this._bumpPrev.set(car, { flx, fly, frx, fry, rlx, rly, rrx, rry })
+      } else if (!prev) {
+        this._bumpPrev.set(car, { flx, fly, frx, fry, rlx, rly, rrx, rry })
       }
-      this._bumpPrev.set(car, { flx, fly, frx, fry, rlx, rly, rrx, rry })
       this._stopAccelPrev.delete(car)
       this._clearTurnState(car)
     } else if (type === 'stop' || type === 'accel') {

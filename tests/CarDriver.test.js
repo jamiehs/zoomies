@@ -260,7 +260,8 @@ describe('_emitSkidmarks', () => {
     car._wasColliding = true
     car.speed = 5
     driver._emitSkidmarks(car)
-    driver._emitSkidmarks(car)  // prev exists → 4 bump segments (all four wheels)
+    car.x += car.tireWidth * 4  // move enough to exceed the minStep threshold
+    driver._emitSkidmarks(car)  // prev exists + moved enough → 4 bump segments
     expect(driver._skidmarks.filter(s => s.type === 'bump').length).toBeGreaterThan(0)
   })
 
@@ -313,6 +314,7 @@ describe('_emitSkidmarks', () => {
     car.target = { x: 200, y: 100 }
     driver._prevSpeed.set(car, 5)   // speeding = true → accel would qualify too
     driver._emitSkidmarks(car)
+    car.x += car.tireWidth * 4  // move enough to exceed the minStep threshold
     driver._prevSpeed.set(car, 5)
     driver._emitSkidmarks(car)
     expect(driver._skidmarks.filter(s => s.type === 'bump').length).toBeGreaterThan(0)
