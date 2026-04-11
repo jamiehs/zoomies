@@ -20,7 +20,7 @@ export class CarDriver {
 
     this.cars = []
     this.debug = opts.debug ?? false
-    this.driverChange = opts.driverChange ?? false
+    this.driverChange = opts.driverChange ?? true
     this.skidOpacity = opts.skidOpacity ?? 0.33
     this.shadow = opts.shadow ?? true
     this.shadowOpacity = opts.shadowOpacity ?? 0.40
@@ -84,31 +84,31 @@ export class CarDriver {
     this._onResize = this._resize.bind(this)
     window.addEventListener('resize', this._onResize)
 
-    // Click binding — pass clickTarget: null to disable
-    this._onClick = (e) => {
+    // driverChange click — bound to document always, independent of clickTarget
+    this._onDriverChangeClick = (e) => {
       const x = e.pageX
       const y = e.pageY
-      if (this.driverChange) {
-        for (const car of this.cars) {
-          if (this._hitTestCar(car, x, y)) {
-            if (this._playerCar === car) {
-              this._releasePlayerCar()
-            } else {
-              this._releasePlayerCar()
-              this._playerCar = car
-              car._playerControlled = true
-              car.target = null
-              car.path = null
-            }
-            return
+      for (const car of this.cars) {
+        if (this._hitTestCar(car, x, y)) {
+          if (this._playerCar === car) {
+            this._releasePlayerCar()
+          } else {
+            this._releasePlayerCar()
+            this._playerCar = car
+            car._playerControlled = true
+            car.target = null
+            car.path = null
           }
+          return
         }
-        // Click on empty space while driverChange is on — release player car
-        // and send AI cars to the destination as normal
-        this._releasePlayerCar()
       }
-      this.driveTo(x, y)
+      // Click on empty space — release player car
+      this._releasePlayerCar()
     }
+    if (this.driverChange) document.addEventListener('click', this._onDriverChangeClick)
+
+    // Click-to-drive binding — pass clickTarget: null to disable
+    this._onClick = (e) => { this.driveTo(e.pageX, e.pageY) }
     if (clickTarget) clickTarget.addEventListener('click', this._onClick)
 
     // Arrow-key state for player-controlled car
@@ -489,6 +489,7 @@ export class CarDriver {
       this._rafId = null
     }
     if (this._clickTarget) this._clickTarget.removeEventListener('click', this._onClick)
+    if (this.driverChange) document.removeEventListener('click', this._onDriverChangeClick)
     window.removeEventListener('resize', this._onResize)
     document.removeEventListener('keydown', this._onKeyDown)
     document.removeEventListener('keyup',   this._onKeyUp)
