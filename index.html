@@ -240,13 +240,14 @@
     <span style="color:#e9c46a">// Physics</span><br />
     maxSpeed: 320 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px/s (±20% random variation per car)<br />
     acceleration: 220 &nbsp;— px/s²<br />
-    brakeDecel: 480 &nbsp;&nbsp;&nbsp;— px/s²<br />
+    brakes: 0.5 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— 0 = poor (~60 px/s²), 0.5 = default (~480 px/s²), 1 = ABS (~900 px/s²)<br />
     wheelbase: 32 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px; also scales visual body length<br />
     maxSteering: 35 &nbsp;&nbsp;&nbsp;— ± degrees from centre (lock-to-lock = maxSteering × 2)<br />
     steeringRate: 120 &nbsp;— degrees/s the wheel can turn<br />
     twitchiness: 0.4 &nbsp;&nbsp;— 0 = super stable (rate drops to zero at top speed), 1 = very twitchy (full rate always)<br />
     arrivalRadius: 144 — px; brake-to-stop zone around target<br />
     skidThreshold: 150 — px/s; speed above which braking produces a skid<br />
+    grip: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— 0–1 tire grip; scales skidThreshold, slipStiffness, slipScale offset, and brakeDecel (min 30%)<br />
     slipStiffness: 34 &nbsp;— rear grip spring; ω_n = √k ≈ 5.8 rad/s<br />
     slipDamping: 3 &nbsp;&nbsp;&nbsp;&nbsp;— ζ ≈ 0.34; underdamped, visible overshoot on corner exit<br />
     slipScale: 1.0 &nbsp;&nbsp;&nbsp;&nbsp;— mark offset multiplier; increase to exaggerate the wiggle<br />

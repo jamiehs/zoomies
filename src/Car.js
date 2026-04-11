@@ -10,12 +10,13 @@ const DEFAULTS = {
   tireWidth: 4,          // px — skidmark line width
   maxSpeed: 320,         // px/s
   acceleration: 220,     // px/s²
-  brakeDecel: 480,       // px/s²
+  brakes: 0.5,           // 0–1: braking strength (0 = poor ~60 px/s², 0.5 = default ~480 px/s², 1 = ABS ~900 px/s²)
   maxSteering: 35,       // ± degrees from centre (total lock-to-lock = maxSteering × 2)
   steeringRate: 120,     // degrees/s — how fast the wheel turns
   twitchiness: 0.4, // 0–1: high-speed steering damping (0 = super stable, 1 = very twitchy)
   arrivalRadius: 144,    // ~3× car width — must be > min turning radius (≈ 46px)
   skidThreshold: 150,    // px/s — speed above which arrival triggers a skid
+  grip: 1.0,             // 0–1: tire grip — scales skid threshold, slip stiffness, slip visual, and braking force
   slipStiffness: 34,     // rear slip spring constant — ω_n = √34 ≈ 5.8 rad/s
   slipDamping: 3,        // slip damper — ζ ≈ 0.34, underdamped with clear overshoot
   slipScale: 1.0,        // multiplier on the mark offset — increase to exaggerate the visual wiggle
@@ -49,15 +50,17 @@ export class Car {
     this.tireWidth = cfg.tireWidth
     this.maxSpeed = cfg.maxSpeed * (0.8 + Math.random() * 0.4)  // ±20% variation
     this.acceleration = cfg.acceleration
-    this.brakeDecel = cfg.brakeDecel
+    // brakeDecel: explicit override takes priority, otherwise derived from brakes (0–1)
+    this.brakeDecel = opts.brakeDecel ?? (60 + cfg.brakes * 840)
     this.maxSteering = cfg.maxSteering * DEG
     this.steeringRate = cfg.steeringRate * DEG
     this.twitchiness = cfg.twitchiness
     this.arrivalRadius = cfg.arrivalRadius
+    this.grip          = cfg.grip
     this.skidThreshold = cfg.skidThreshold
     this.slipStiffness = cfg.slipStiffness
     this.slipDamping   = cfg.slipDamping
-    this.slipScale          = cfg.slipScale
+    this.slipScale     = cfg.slipScale
     this.driveBias          = cfg.driveBias
     this.aggression         = cfg.aggression
     this.shadowCornerRadius = cfg.shadowCornerRadius
@@ -184,7 +187,8 @@ export class Car {
     if (!this.target) {
       // Coast to a stop
       if (this.speed > 0) {
-        this.speed = Math.max(0, this.speed - this.brakeDecel * dt)
+        const effectiveBrakeDecel = this.brakeDecel * (0.3 + 0.7 * this.grip)
+        this.speed = Math.max(0, this.speed - effectiveBrakeDecel * dt)
         this._applyBicycleModel(dt)
       }
       return
@@ -198,13 +202,14 @@ export class Car {
     // --- Speed control ---
     // Brake based on stopping distance only — the large arrival radius
     // is just for parking, not for triggering early deceleration
-    const brakingDist = (this.speed * this.speed) / (2 * this.brakeDecel)
+    const effectiveBrakeDecel = this.brakeDecel * (0.3 + 0.7 * this.grip)
+    const brakingDist = (this.speed * this.speed) / (2 * effectiveBrakeDecel)
     const shouldBrake = realDist < brakingDist * 1.2
     const insideArrival = realDist < this.arrivalRadius
 
     // Inside arrival radius: just brake to a stop, don't steer
     if (insideArrival) {
-      this.speed = Math.max(0, this.speed - this.brakeDecel * dt)
+      this.speed = Math.max(0, this.speed - effectiveBrakeDecel * dt)
       this._applyBicycleModel(dt)
       if (this.speed < 10) {
         this.speed = 0
@@ -331,12 +336,12 @@ export class Car {
     const effectiveMax = this.maxSpeed * alignFactor * (1 + proximityBoost)
 
     if (shouldBrake) {
-      this._skidding = this.speed > this.skidThreshold
-      this.speed = Math.max(0, this.speed - this.brakeDecel * dt)
+      this._skidding = this.speed > this.skidThreshold * this.grip
+      this.speed = Math.max(0, this.speed - effectiveBrakeDecel * dt)
     } else if (this.speed > effectiveMax) {
       // Too fast for current heading error — ease off
       this._skidding = false
-      this.speed = Math.max(effectiveMax, this.speed - this.brakeDecel * 0.5 * dt)
+      this.speed = Math.max(effectiveMax, this.speed - effectiveBrakeDecel * 0.5 * dt)
     } else {
       this._skidding = false
       this.speed = Math.min(effectiveMax, this.speed + this.acceleration * dt)
@@ -390,7 +395,7 @@ export class Car {
   _applyBicycleModel(dt) {
     if (this.speed === 0) {
       // At rest, spring the slip angle back to zero
-      const spring  = -this.slipStiffness * this._slipAngle
+      const spring  = -this.slipStiffness * this.grip * this._slipAngle
       const damping = -this.slipDamping   * this._slipVel
       this._slipVel   += (spring + damping) * dt
       this._slipAngle += this._slipVel * dt
@@ -407,7 +412,7 @@ export class Car {
     // restores it to zero; damping controls how quickly it settles.
     // With slipDamping/slipStiffness tuned for ζ ≈ 0.64, you get one clean
     // overshoot when the car exits a corner — the tail steps out, then snaps back.
-    const spring  = -this.slipStiffness * this._slipAngle
+    const spring  = -this.slipStiffness * this.grip * this._slipAngle
     const damping = -this.slipDamping   * this._slipVel
     this._slipVel   += (angularVel + spring + damping) * dt
     this._slipAngle += this._slipVel * dt

@@ -255,7 +255,7 @@ export class CarDriver {
     // Rear axle wheel positions — offset laterally by slip angle so marks
     // fan outward mid-corner and trace the snap-back wiggle on corner exit.
     // perpX points LEFT of heading; positive slipAngle = rear slides RIGHT.
-    const slipOffset = Math.sin(car._slipAngle) * car.height * 1.5 * car.slipScale
+    const slipOffset = Math.sin(car._slipAngle) * car.height * 1.5 * (car.slipScale / Math.max(car.grip, 0.1))
     const rlx = car.x - fwdX * axleOffset + perpX * trackHalf - perpX * slipOffset
     const rly = car.y - fwdY * axleOffset + perpY * trackHalf - perpY * slipOffset
     const rrx = car.x - fwdX * axleOffset - perpX * trackHalf - perpX * slipOffset

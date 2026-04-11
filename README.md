@@ -84,13 +84,14 @@ All options are optional — sensible defaults are provided.
 |---|---|---|
 | `maxSpeed` | 320 | Top speed in px/s (±20% random variation per car) |
 | `acceleration` | 220 | Acceleration in px/s² |
-| `brakeDecel` | 480 | Braking deceleration in px/s² |
+| `brakes` | 0.5 | Braking strength: `0` = poor (~60 px/s²), `0.5` = default (~480 px/s²), `1` = ABS (~900 px/s²). Override with raw `brakeDecel` (px/s²) for precise control. |
 | `wheelbase` | 32 | Distance between axles in px; also drives visual body length |
 | `maxSteering` | 35 | Maximum front wheel angle in ± degrees from centre (lock-to-lock = `maxSteering × 2`) |
 | `steeringRate` | 120 | How fast the steering wheel turns, in degrees/s |
 | `twitchiness` | 0.4 | High-speed steering character. `0` = super stable (steering rate drops to zero at max speed), `1` = very twitchy (full steering rate at any speed). Controls how much `steeringRate` is reduced as speed rises. |
 | `arrivalRadius` | 144 | Radius around target where car brakes to a stop |
 | `skidThreshold` | 150 | Speed above which braking produces a skid effect |
+| `grip` | `1.0` | Tire grip level (0–1). Scales four physics values: `skidThreshold × grip` (lower grip → skids start sooner), `slipStiffness × grip` (less restoring force → more oversteer), `slipScale / grip` (wider skidmark fan), and `brakeDecel × (0.3 + 0.7 × grip)` (minimum 30% braking even at grip=0). |
 | `slipStiffness` | 34 | Rear slip spring constant — how quickly tires restore grip (ω_n = √k ≈ 5.8 rad/s) |
 | `slipDamping` | 3 | Slip damper — ζ ≈ 0.34, clearly underdamped with visible overshoot on corner exit |
 | `slipScale` | 1.0 | Multiplier on the mark lateral offset — increase to exaggerate the visual wiggle without changing physics |
