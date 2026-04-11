@@ -94,6 +94,7 @@ export class Car {
     this.target = null  // { x, y }
     this.orbitDetection = true
     this.proximityBoost = true
+    this._playerControlled = false  // true when the user has taken over this car
     this._skidding = false
     this._cumulativeRotation = 0  // tracks total rotation for orbit detection
     this._orbiting = false        // true when braking out of an orbit
@@ -178,31 +179,7 @@ export class Car {
    * @param {Car[]} others  All other cars for avoidance.
    */
   update(dt, others) {
-    // Exhaust afterfire — gear-shift flash, independent of driving state.
-    // Each event has a 40% chance of a double pop and a 15% chance of a triple.
-    if (this.exhaustPosition && this.speed > 50) {
-      this._exhaustTimer -= dt
-      if (this._exhaustTimer <= 0) {
-        this._exhaustFrame = 0
-        this._exhaustTimer = this.exhaustInterval * (1 + Math.random())
-        this._rollExhaustShape()
-        const roll = Math.random()
-        this._exhaustPending = roll < 0.15 ? 2 : roll < 0.55 ? 1 : 0
-      }
-    }
-    if (this._exhaustFrame >= 0) {
-      this._exhaustFrame++
-      if (this._exhaustFrame >= 5) {
-        if (this._exhaustPending > 0) {
-          // Fire the next pop in the burst — re-roll shape for variety
-          this._exhaustFrame = 0
-          this._rollExhaustShape()
-          this._exhaustPending--
-        } else {
-          this._exhaustFrame = -1
-        }
-      }
-    }
+    this._updateExhaust(dt)
 
     if (!this.target) {
       // Coast to a stop
@@ -605,7 +582,89 @@ export class Car {
       ctx.fill()
     }
 
-    ctx.restore()
+ctx.restore()
+  }
+
+  _updateExhaust(dt) {
+    // Gear-shift afterfire — independent of driving state.
+    // Each event has a 40% chance of a double pop and a 15% chance of a triple.
+    if (this.exhaustPosition && Math.abs(this.speed) > 50) {
+      this._exhaustTimer -= dt
+      if (this._exhaustTimer <= 0) {
+        this._exhaustFrame = 0
+        this._exhaustTimer = this.exhaustInterval * (1 + Math.random())
+        this._rollExhaustShape()
+        const roll = Math.random()
+        this._exhaustPending = roll < 0.15 ? 2 : roll < 0.55 ? 1 : 0
+      }
+    }
+    if (this._exhaustFrame >= 0) {
+      this._exhaustFrame++
+      if (this._exhaustFrame >= 5) {
+        if (this._exhaustPending > 0) {
+          this._exhaustFrame = 0
+          this._rollExhaustShape()
+          this._exhaustPending--
+        } else {
+          this._exhaustFrame = -1
+        }
+      }
+    }
+  }
+
+  /**
+   * Player-controlled update — replaces the AI update() when the user has
+   * taken over this car. Arrow keys: up = throttle, down = brake/reverse,
+   * left/right = steer.
+   * @param {number} dt  Delta time in seconds.
+   * @param {Set<string>} keys  Currently held key names.
+   */
+  playerUpdate(dt, keys) {
+    this._updateExhaust(dt)
+
+    const fwd   = keys.has('ArrowUp')
+    const back  = keys.has('ArrowDown')
+    const left  = keys.has('ArrowLeft')
+    const right = keys.has('ArrowRight')
+
+    // Steering — self-centres when no key held
+    if (left) {
+      this.steeringAngle = Math.max(this.steeringAngle - this.steeringRate * dt, -this.maxSteering)
+    } else if (right) {
+      this.steeringAngle = Math.min(this.steeringAngle + this.steeringRate * dt,  this.maxSteering)
+    } else {
+      this.steeringAngle *= Math.max(0, 1 - dt * 6)
+    }
+
+    const effectiveBrakeDecel = this.brakeDecel * (0.3 + 0.7 * this.grip)
+
+    if (fwd) {
+      this.speed = Math.min(this.maxSpeed, this.speed + this.acceleration * dt)
+      this._skidding = false
+    } else if (back) {
+      if (this.speed > 5) {
+        // Brake first
+        this.speed = Math.max(0, this.speed - effectiveBrakeDecel * dt)
+        this._skidding = this.speed > this.skidThreshold * this.grip
+      } else {
+        // Reverse once nearly stopped
+        this.speed = Math.max(-this.maxSpeed * 0.35, this.speed - this.acceleration * 0.4 * dt)
+        this._skidding = false
+      }
+    } else {
+      // Coast to a stop
+      const coast = effectiveBrakeDecel * 0.08
+      this.speed = Math.abs(this.speed) < 2 ? 0
+                 : this.speed > 0            ? Math.max(0,               this.speed - coast * dt)
+                                             : Math.min(0,               this.speed + coast * dt)
+      this._skidding = false
+    }
+
+    if (this._skidding) {
+      this.steeringAngle = clamp(this.steeringAngle * 1.4, -this.maxSteering * 1.4, this.maxSteering * 1.4)
+    }
+
+    this._applyBicycleModel(dt)
   }
 
   _rollExhaustShape() {

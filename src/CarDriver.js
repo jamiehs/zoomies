@@ -20,6 +20,7 @@ export class CarDriver {
 
     this.cars = []
     this.debug = opts.debug ?? false
+    this.driverChange = opts.driverChange ?? false
     this.skidOpacity = opts.skidOpacity ?? 0.33
     this.shadow = opts.shadow ?? true
     this.shadowOpacity = opts.shadowOpacity ?? 0.40
@@ -85,9 +86,42 @@ export class CarDriver {
 
     // Click binding — pass clickTarget: null to disable
     this._onClick = (e) => {
-      this.driveTo(e.pageX, e.pageY)
+      const x = e.pageX
+      const y = e.pageY
+      if (this.driverChange) {
+        for (const car of this.cars) {
+          if (this._hitTestCar(car, x, y)) {
+            if (this._playerCar === car) {
+              this._releasePlayerCar()
+            } else {
+              this._releasePlayerCar()
+              this._playerCar = car
+              car._playerControlled = true
+              car.target = null
+              car.path = null
+            }
+            return
+          }
+        }
+        // Click on empty space while driverChange is on — release player car
+        // and send AI cars to the destination as normal
+        this._releasePlayerCar()
+      }
+      this.driveTo(x, y)
     }
     if (clickTarget) clickTarget.addEventListener('click', this._onClick)
+
+    // Arrow-key state for player-controlled car
+    this._keys = new Set()
+    this._playerCar = null
+    this._onKeyDown = (e) => {
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return
+      if (this._playerCar) e.preventDefault()
+      this._keys.add(e.key)
+    }
+    this._onKeyUp = (e) => { this._keys.delete(e.key) }
+    document.addEventListener('keydown', this._onKeyDown)
+    document.addEventListener('keyup',   this._onKeyUp)
 
     // Spawn initial cars in a cluster with aligned headings
     const spawnX = window.innerWidth * 0.8
@@ -111,13 +145,14 @@ export class CarDriver {
    * in a random circular pattern around the click point.
    */
   driveTo(x, y) {
-    const n = this.cars.length
+    const activeCars = this.cars.filter(c => !c._playerControlled)
+    const n = activeCars.length
     if (n === 0) return
 
     // Scatter radius scales with car count so they have room.
     // minSeparation is 2.5× car width so targets are far enough apart that
     // cars don't enter each other's arrival zones simultaneously.
-    const carW = this.cars[0].width
+    const carW = activeCars[0].width
     const mult = this._scatterMult ?? 1.0
     const minSeparation = carW * 2.5
     const scatterRadius = Math.max(carW * (0.66 + n * 0.33), minSeparation * 0.9) * mult
@@ -134,8 +169,8 @@ export class CarDriver {
     // Shared racing-line midpoint: from the fleet's average position toward the
     // destination, laterally offset so all cars funnel through the same region
     // before spreading to their individual targets.
-    const avgX = this.cars.reduce((s, c) => s + c.x, 0) / n
-    const avgY = this.cars.reduce((s, c) => s + c.y, 0) / n
+    const avgX = activeCars.reduce((s, c) => s + c.x, 0) / n
+    const avgY = activeCars.reduce((s, c) => s + c.y, 0) / n
     const jDx = x - avgX
     const jDy = y - avgY
     const jDist = Math.sqrt(jDx * jDx + jDy * jDy) || 1
@@ -147,8 +182,8 @@ export class CarDriver {
       y: avgY + jDy * 0.45 + jPy * lateral,
     }
 
-    // Sort cars by maxSpeed (fastest first) — fastest car gets furthest target
-    const sorted = [...this.cars].sort((a, b) => b.maxSpeed - a.maxSpeed)
+    // Sort active cars by maxSpeed (fastest first) — fastest gets furthest target
+    const sorted = [...activeCars].sort((a, b) => b.maxSpeed - a.maxSpeed)
     for (let i = 0; i < n; i++) {
       sorted[i].driveTo(targets[i].x, targets[i].y, sharedMid)
     }
@@ -455,8 +490,28 @@ export class CarDriver {
     }
     if (this._clickTarget) this._clickTarget.removeEventListener('click', this._onClick)
     window.removeEventListener('resize', this._onResize)
+    document.removeEventListener('keydown', this._onKeyDown)
+    document.removeEventListener('keyup',   this._onKeyUp)
     this._canvas.remove()
     this._skidCanvas.remove()
+  }
+
+  _releasePlayerCar() {
+    if (this._playerCar) {
+      this._playerCar._playerControlled = false
+      this._playerCar = null
+    }
+  }
+
+  /** Returns true if world-space point (px, py) falls inside the car's rotated rectangle. */
+  _hitTestCar(car, px, py) {
+    const dx  = px - car.x
+    const dy  = py - car.y
+    const cos = Math.cos(-car.heading)
+    const sin = Math.sin(-car.heading)
+    const lx  = dx * cos - dy * sin
+    const ly  = dx * sin + dy * cos
+    return Math.abs(lx) <= car.width / 2 + 4 && Math.abs(ly) <= car.height / 2 + 4
   }
 
   _resize() {
@@ -481,7 +536,11 @@ export class CarDriver {
     for (const car of this.cars) {
       car.orbitDetection = this.orbitDetection
       car.proximityBoost = this.proximityBoost
-      car.update(dt, this.cars)
+      if (car._playerControlled) {
+        car.playerUpdate(dt, this._keys)
+      } else {
+        car.update(dt, this.cars)
+      }
     }
 
     // Post-movement collision resolution: push overlapping cars apart.
