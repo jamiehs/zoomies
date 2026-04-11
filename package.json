@@ -1,8 +1,15 @@
 {
   "name": "@jamiehs/zoomies",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Drop a fleet of misbehaved top-down race cars onto any web page. Click anywhere — they'll get there. Eventually.",
-  "keywords": ["cars", "animation", "canvas", "racing", "interactive", "physics"],
+  "keywords": [
+    "cars",
+    "animation",
+    "canvas",
+    "racing",
+    "interactive",
+    "physics"
+  ],
   "license": "MIT",
   "author": "Jamie Hamel-Smith <jamie3d@gmail.com>",
   "repository": {
