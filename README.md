@@ -256,7 +256,7 @@ Four types, evaluated in priority order each frame. Marks are drawn once to a pe
 | **Stop** | Braking above `skidThreshold × grip` px/s | All four — random lock bias per event: 50% balanced, 25% front-heavy (fa=1.0, ra=0.25), 25% rear-heavy (fa=0.25, ra=1.0) | 1.0 × axle bias weight |
 | **Accel** | Speed 10–100 px/s while gaining speed | Driven wheels only — rear at `driveBias` weight, front at `1 − driveBias`; RWD = rear only, FWD = front only, AWD = both | `1 − (v − 10) / 90` (fades as speed rises) |
 | **Turn** | Steering > 65% lock at > 100 px/s | Outer rear (solid), inner rear (20% alpha, 10-frame delayed start) | Proportional to lock angle × 0.5 |
-| **Bump** | Near-stopped car nudged by collision | All four | 0.5 |
+| **Bump** | Any collision while not hard-braking | All four | 0.5 |
 
 Each skid *event* (type first activating) has a 50% chance of producing no marks at all, giving organic variation. `skidOpacity` is a global multiplier applied on top of all baked alphas.
 

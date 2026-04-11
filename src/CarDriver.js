@@ -205,6 +205,7 @@ export class CarDriver {
    * Emit skidmark segments for a car based on its current driving state.
    * Priority: stop > turn > accel (multiple can be true at once; one wins).
    *   stop  — hard braking at speed (car._skidding)
+   *   bump  — car being physically pushed by another (any speed)
    *   turn  — cornering near steering lock at speed
    *   accel — wheel-spin during launch (low speed, has target, not braking)
    *
@@ -218,7 +219,7 @@ export class CarDriver {
     const speeding  = car.speed > prevSpeed  // actually gaining speed this frame
 
     const stop  = car._skidding
-    const bump  = !stop && car._wasColliding && car.speed < 20
+    const bump  = !stop && car._wasColliding
     const turn  = !stop && !bump && Math.abs(car._slipAngle) > 0.05 && car.speed > 60
     const accel = !stop && !bump && !turn && speeding && car.target !== null && car.speed > 10 && car.speed < 100
     const type = stop ? 'stop' : bump ? 'bump' : turn ? 'turn' : accel ? 'accel' : null
@@ -687,7 +688,7 @@ export class CarDriver {
     const SKID_LABELS = { accel: 'ACCEL', turn: 'CORNER', stop: 'BRAKE', bump: 'BUMP' }
     for (const car of this.cars) {
       const stop  = car._skidding
-      const bump  = !stop && car._wasColliding && car.speed < 20
+      const bump  = !stop && car._wasColliding
       const turn  = !stop && !bump && Math.abs(car._slipAngle) > 0.05 && car.speed > 60
       const accel = !stop && !bump && !turn && car.target !== null && car.speed > 10 && car.speed < 100
       const type  = stop ? 'stop' : bump ? 'bump' : turn ? 'turn' : accel ? 'accel' : null
