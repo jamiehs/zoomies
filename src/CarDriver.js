@@ -341,12 +341,22 @@ export class CarDriver {
       }
       this._turnOuterPrev.set(car, { x: ox, y: oy })
 
-      // Inner track — delay by D frames; steeringAngle stored in queue for accurate alpha at emit time
-      const D = 10
+      // Inner track — distance-based buffer: hold points until the buffered arc
+      // length exceeds one car-width. This makes the inner/outer gap a consistent
+      // world-space distance regardless of framerate or speed, grounded in actual
+      // tire geometry (the inner wheel travels ~track_width fewer px around a corner).
+      const innerGap = car.height
       let queue = this._turnInnerQueue.get(car)
       if (!queue) { queue = []; this._turnInnerQueue.set(car, queue) }
       queue.push({ x: ix, y: iy, slipAngle: car._slipAngle })
-      if (queue.length > D) {
+
+      let arcLen = 0
+      for (let i = 1; i < queue.length; i++) {
+        const a = queue[i - 1], b = queue[i]
+        arcLen += Math.hypot(b.x - a.x, b.y - a.y)
+      }
+
+      if (arcLen > innerGap) {
         const current = queue.shift()
         const delayedPrev = this._turnInnerDelayedPrev.get(car)
         const innerAlpha = Math.min(Math.abs(current.slipAngle) / maxSlip, 1.0) * 0.2

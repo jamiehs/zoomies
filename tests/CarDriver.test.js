@@ -332,17 +332,22 @@ describe('_emitSkidmarks', () => {
     expect(driver._skidmarks.filter(s => s.type === 'stop').length).toBe(0)
   })
 
-  it('inner wheel delay queue: no inner segments until 12 frames in', () => {
+  it('inner wheel delay queue: no inner segments until buffered arc exceeds car height', () => {
     const driver = makeDriver({ count: 0 })
     const car = driver.addCar({ x: 100, y: 100, heading: 0 })
     car._skidding = false
     car._wasColliding = false
     car._slipAngle = 0.15
     car.speed = 100
-    // Frames 1–11: queue fills to D=10; delayedPrev not yet set → no inner segments
-    for (let i = 0; i < 11; i++) driver._emitSkidmarks(car)
+    // Move 5px/frame; innerGap = car.height = 24px.
+    // After 5 moves (25px of arc) the queue releases its first point → sets delayedPrev (no segment yet).
+    // The following frame emits the first actual inner segment.
+    for (let i = 0; i < 6; i++) {
+      car.x += 5
+      driver._emitSkidmarks(car)
+    }
     expect(driver._skidmarks.filter(s => s.isInner).length).toBe(0)
-    // Frame 12: delayedPrev was set on frame 11 → first inner segment emitted
+    car.x += 5
     driver._emitSkidmarks(car)
     expect(driver._skidmarks.filter(s => s.isInner).length).toBeGreaterThan(0)
   })
