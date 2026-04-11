@@ -184,6 +184,24 @@ export class CarDriver {
     this._drawSkidSegment(seg)
   }
 
+  // Emit a skid segment, subdividing if it exceeds maxLen so marks stay smooth
+  // at any framerate. Intermediate points are linearly interpolated.
+  _pushSkidSmooth(seg, maxLen) {
+    const dx = seg.x2 - seg.x1
+    const dy = seg.y2 - seg.y1
+    const len = Math.sqrt(dx * dx + dy * dy)
+    if (len <= maxLen) { this._pushSkid(seg); return }
+    const steps = Math.ceil(len / maxLen)
+    let x1 = seg.x1, y1 = seg.y1
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps
+      const x2 = seg.x1 + dx * t
+      const y2 = seg.y1 + dy * t
+      this._pushSkid({ ...seg, x1, y1, x2, y2 })
+      x1 = x2; y1 = y2
+    }
+  }
+
   _drawSkidSegment(s) {
     const turnColor = this.debug
       ? (s.isInner ? '0, 160, 160' : '0, 255, 255')
@@ -279,7 +297,7 @@ export class CarDriver {
 
     if (type === 'bump') {
       const prev = this._bumpPrev.get(car)
-      const minStep = car.tireWidth * 2
+      const minStep = car.tireWidth * 0.5
       const moved = prev ? Math.hypot(rlx - prev.rlx, rly - prev.rly) : Infinity
       if (prev && moved >= minStep) {
         this._pushSkid({ x1: prev.flx, y1: prev.fly, x2: flx, y2: fly, type, alpha: bumpAlpha, tw })
@@ -334,10 +352,11 @@ export class CarDriver {
       }
       const streakId = this._turnStreakId.get(car)
 
-      // Outer track — emit immediately with steering-proportional alpha
+      // Outer track — emit immediately with steering-proportional alpha;
+      // subdivide long segments so marks stay smooth at any framerate.
       const outerPrev = this._turnOuterPrev.get(car)
       if (outerPrev) {
-        this._pushSkid({ x1: outerPrev.x, y1: outerPrev.y, x2: ox, y2: oy, type, streakId, isInner: false, alpha: turnAlpha, tw })
+        this._pushSkidSmooth({ x1: outerPrev.x, y1: outerPrev.y, x2: ox, y2: oy, type, streakId, isInner: false, alpha: turnAlpha, tw }, tw * 2)
       }
       this._turnOuterPrev.set(car, { x: ox, y: oy })
 
@@ -361,7 +380,7 @@ export class CarDriver {
         const delayedPrev = this._turnInnerDelayedPrev.get(car)
         const innerAlpha = Math.min(Math.abs(current.slipAngle) / maxSlip, 1.0) * 0.2
         if (delayedPrev) {
-          this._pushSkid({ x1: delayedPrev.x, y1: delayedPrev.y, x2: current.x, y2: current.y, type, streakId, isInner: true, alpha: innerAlpha, tw })
+          this._pushSkidSmooth({ x1: delayedPrev.x, y1: delayedPrev.y, x2: current.x, y2: current.y, type, streakId, isInner: true, alpha: innerAlpha, tw }, tw * 2)
         }
         this._turnInnerDelayedPrev.set(car, current)
       }
@@ -583,19 +602,34 @@ export class CarDriver {
         }
       }
 
-      // Exhaust position crosshair(s) — shown in car-local space
+      // Exhaust direction arrow — shaft along flame vector, arrowhead at tip.
+      // Scaled to actual flame size so the indicator matches what renders.
       if (car.exhaustPosition) {
         ctx.save()
         ctx.translate(car.x, car.y)
         ctx.rotate(car.heading)
         const pts = car._exhaustPositions(car.width, car.height)
-        const cs = 5  // crosshair arm length
+        const er     = car.exhaustRadius
+        const shaftL = er * 3.5   // same base length as the flame
+        const headL  = er * 0.9   // arrowhead leg length
+        const headA  = 0.42       // arrowhead half-angle (radians, ~24°)
         ctx.strokeStyle = 'rgba(255, 220, 0, 0.9)'
         ctx.lineWidth = 1.5
-        for (const p of pts) {
+        for (const { x: px, y: py, dx, dy } of pts) {
+          const tipX = px + dx * shaftL
+          const tipY = py + dy * shaftL
+          // Shaft
           ctx.beginPath()
-          ctx.moveTo(p.x - cs, p.y); ctx.lineTo(p.x + cs, p.y)
-          ctx.moveTo(p.x, p.y - cs); ctx.lineTo(p.x, p.y + cs)
+          ctx.moveTo(px, py)
+          ctx.lineTo(tipX, tipY)
+          ctx.stroke()
+          // Arrowhead — two lines back from the tip at ±headA from the reverse direction
+          const backAngle = Math.atan2(-dy, -dx)
+          ctx.beginPath()
+          ctx.moveTo(tipX, tipY)
+          ctx.lineTo(tipX + Math.cos(backAngle + headA) * headL, tipY + Math.sin(backAngle + headA) * headL)
+          ctx.moveTo(tipX, tipY)
+          ctx.lineTo(tipX + Math.cos(backAngle - headA) * headL, tipY + Math.sin(backAngle - headA) * headL)
           ctx.stroke()
         }
         ctx.restore()

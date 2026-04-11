@@ -28,8 +28,10 @@ const DEFAULTS = {
   // Exhaust afterfire flash
   exhaustPosition: null, // 'left' | 'right' | 'bothSides' | 'rear'
   exhaustOffset: 0.5,    // 0–1 along the chosen edge (see _exhaustPositions)
-  exhaustRadius: 6,      // px — radius of each exhaust flash circle
+  exhaustRadius: 6,      // px — base radius of the flame; scales length and width proportionally
   exhaustInterval: 0.9,  // seconds — minimum time between flashes; actual interval is exhaustInterval × (1 + random)
+  exhaustAngle: 90,      // degrees — 90 = perpendicular to car side; up to 170 = swept back toward tail (side exhausts only)
+  exhaustInset: 0,       // px — moves the emission point inboard from the car edge (toward centre)
   // Sprite: URL string or HTMLImageElement; null = draw rectangle body
   sprite: null,
 }
@@ -73,8 +75,13 @@ export class Car {
     this.exhaustOffset   = cfg.exhaustOffset ?? 0.5
     this.exhaustRadius   = cfg.exhaustRadius ?? 6
     this.exhaustInterval = cfg.exhaustInterval ?? 3
-    this._exhaustTimer = this.exhaustInterval * (1 + Math.random())  // seconds until first flash
-    this._exhaustFrame = -1  // -1 = inactive; 0–4 = animation frame index
+    this.exhaustAngle    = cfg.exhaustAngle  ?? 90
+    this.exhaustInset    = cfg.exhaustInset  ?? 0
+    this._exhaustTimer   = this.exhaustInterval * (1 + Math.random())  // seconds until first flash
+    this._exhaustFrame   = -1   // -1 = inactive; 0–4 = animation frame index
+    this._exhaustPending = 0    // follow-up pops queued in current burst (0 = single)
+    this._exhaustScale   = 1    // random size multiplier, re-rolled each pop
+    this._exhaustWiggle  = null // per-pop shape randomisation, re-rolled each pop
 
     // Sprite — accepts a URL string or an existing HTMLImageElement
     if (typeof cfg.sprite === 'string') {
@@ -171,17 +178,30 @@ export class Car {
    * @param {Car[]} others  All other cars for avoidance.
    */
   update(dt, others) {
-    // Exhaust afterfire — gear-shift flash, independent of driving state
+    // Exhaust afterfire — gear-shift flash, independent of driving state.
+    // Each event has a 40% chance of a double pop and a 15% chance of a triple.
     if (this.exhaustPosition && this.speed > 50) {
       this._exhaustTimer -= dt
       if (this._exhaustTimer <= 0) {
         this._exhaustFrame = 0
         this._exhaustTimer = this.exhaustInterval * (1 + Math.random())
+        this._rollExhaustShape()
+        const roll = Math.random()
+        this._exhaustPending = roll < 0.15 ? 2 : roll < 0.55 ? 1 : 0
       }
     }
     if (this._exhaustFrame >= 0) {
       this._exhaustFrame++
-      if (this._exhaustFrame >= 5) this._exhaustFrame = -1
+      if (this._exhaustFrame >= 5) {
+        if (this._exhaustPending > 0) {
+          // Fire the next pop in the burst — re-roll shape for variety
+          this._exhaustFrame = 0
+          this._rollExhaustShape()
+          this._exhaustPending--
+        } else {
+          this._exhaustFrame = -1
+        }
+      }
     }
 
     if (!this.target) {
@@ -516,6 +536,57 @@ export class Car {
     ctx.translate(bodyX, bodyY)
     ctx.rotate(visualHeading)
 
+    // Exhaust afterfire — rendered first so it appears under the car body
+    if (this._exhaustFrame >= 0 && this.exhaustPosition) {
+      const OPACITIES = [0.5, 1.0, 1.0, 0.66, 0.33]
+      const opacity = OPACITIES[this._exhaustFrame] ?? 0
+      const sc = this._exhaustScale ?? 1
+      const wig = this._exhaustWiggle ?? { tipPerp: 0, tipLen: 1, lBulge: 1, rBulge: 1 }
+      const er  = this.exhaustRadius
+      const fl  = er * 3.5 * sc * wig.tipLen
+      const hw  = er * 1.1 * sc
+      const br  = er * 0.55
+
+      ctx.save()
+      ctx.globalAlpha = opacity
+
+      for (const { x: px, y: py, dx, dy } of this._exhaustPositions(w, h)) {
+        const lx = -dy, ly = dx   // left perpendicular to flame direction
+
+        // Tip is slightly deflected perpendicular for an organic, asymmetric look
+        const tipDeflect = wig.tipPerp * hw
+        const tip = {
+          x: px + dx * fl + lx * tipDeflect,
+          y: py + dy * fl + ly * tipDeflect,
+        }
+
+        const lBase  = { x: px + lx * br,                              y: py + ly * br }
+        const rBase  = { x: px - lx * br,                              y: py - ly * br }
+        const lCP1   = { x: px + dx * fl * 0.15 + lx * hw * 1.2 * wig.lBulge, y: py + dy * fl * 0.15 + ly * hw * 1.2 * wig.lBulge }
+        const lCP2   = { x: px + dx * fl * 0.72 + lx * hw * 0.12,     y: py + dy * fl * 0.72 + ly * hw * 0.12 }
+        const rCP1   = { x: px + dx * fl * 0.72 - lx * hw * 0.12,     y: py + dy * fl * 0.72 - ly * hw * 0.12 }
+        const rCP2   = { x: px + dx * fl * 0.15 - lx * hw * 1.2 * wig.rBulge, y: py + dy * fl * 0.15 - ly * hw * 1.2 * wig.rBulge }
+        const backCP = { x: px - dx * br * 0.6,                        y: py - dy * br * 0.6 }
+
+        const grad = ctx.createLinearGradient(px, py, px + dx * fl, py + dy * fl)
+        grad.addColorStop(0,    'rgba(255, 255, 255, 1.0)')
+        grad.addColorStop(0.12, 'rgba(255, 250, 180, 1.0)')
+        grad.addColorStop(0.35, 'rgba(255, 145, 0,   0.9)')
+        grad.addColorStop(0.70, 'rgba(255, 60,  0,   0.55)')
+        grad.addColorStop(1.0,  'rgba(255, 20,  0,   0.0)')
+
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.moveTo(lBase.x, lBase.y)
+        ctx.bezierCurveTo(lCP1.x, lCP1.y, lCP2.x, lCP2.y, tip.x, tip.y)
+        ctx.bezierCurveTo(rCP1.x, rCP1.y, rCP2.x, rCP2.y, rBase.x, rBase.y)
+        ctx.quadraticCurveTo(backCP.x, backCP.y, lBase.x, lBase.y)
+        ctx.fill()
+      }
+
+      ctx.restore()
+    }
+
     // Body — sprite if loaded, otherwise rectangle
     if (this.sprite && this.sprite.complete && this.sprite.naturalWidth > 0) {
       ctx.imageSmoothingEnabled = true
@@ -534,36 +605,42 @@ export class Car {
       ctx.fill()
     }
 
-    // Exhaust afterfire flash
-    if (this._exhaustFrame >= 0 && this.exhaustPosition) {
-      const OPACITIES = [0.5, 1.0, 1.0, 0.66, 0.33]
-      const opacity = OPACITIES[this._exhaustFrame] ?? 0
-      const radius = this.exhaustRadius
-      ctx.fillStyle = `rgba(255, 220, 0, ${opacity})`
-      for (const p of this._exhaustPositions(w, h)) {
-        ctx.beginPath()
-        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2)
-        ctx.fill()
-      }
-    }
-
     ctx.restore()
   }
 
+  _rollExhaustShape() {
+    this._exhaustScale  = 0.8 + Math.random() * 0.4
+    this._exhaustWiggle = {
+      tipPerp: (Math.random() - 0.5) * 0.7,  // tip deflection ± 35% of hw
+      tipLen:  0.82 + Math.random() * 0.36,   // flame length ×0.82–1.18
+      lBulge:  0.75 + Math.random() * 0.55,   // left side fullness
+      rBulge:  0.75 + Math.random() * 0.55,   // right side fullness (independent)
+    }
+  }
+
   /**
-   * Returns exhaust point(s) in car-local space.
+   * Returns exhaust point(s) in car-local space with flame direction vectors.
    * x-axis = forward, y-axis = right side of car (canvas y-down convention).
    * offset 0 = front/left-corner, offset 1 = rear/right-corner.
+   * exhaustAngle: 90 = perpendicular to car side, 170 = swept back toward tail.
+   * dx/dy is the unit vector the flame points in (away from the car body).
    */
   _exhaustPositions(w, h) {
     const o = this.exhaustOffset
-    const sideX  = w / 2 - o * w   // offset=0 → front (+w/2), offset=1 → rear (−w/2)
-    const rearY  = -h / 2 + o * h  // offset=0 → left corner, offset=1 → right corner
+    const sideX = w / 2 - o * w
+    const rearY  = -h / 2 + o * h
+    // Sweep: 0 = perpendicular, increases toward tail (capped at 80° from perpendicular = 170° from nose)
+    const sweep = clamp(this.exhaustAngle - 90, 0, 80) * DEG
+    const sinS = Math.sin(sweep), cosS = Math.cos(sweep)
+    const ins  = this.exhaustInset ?? 0
+    // Left:  perpendicular = (0,-1); inset moves +y (toward centre); swept back toward (-1, 0)
+    // Right: perpendicular = (0,+1); inset moves -y (toward centre); swept back toward (-1, 0)
     switch (this.exhaustPosition) {
-      case 'left':      return [{ x: sideX, y: -h / 2 }]
-      case 'right':     return [{ x: sideX, y:  h / 2 }]
-      case 'bothSides': return [{ x: sideX, y: -h / 2 }, { x: sideX, y: h / 2 }]
-      case 'rear':      return [{ x: -w / 2, y: rearY }]
+      case 'left':      return [{ x: sideX, y: -h / 2 + ins, dx: -sinS, dy: -cosS }]
+      case 'right':     return [{ x: sideX, y:  h / 2 - ins, dx: -sinS, dy:  cosS }]
+      case 'bothSides': return [{ x: sideX, y: -h / 2 + ins, dx: -sinS, dy: -cosS },
+                                { x: sideX, y:  h / 2 - ins, dx: -sinS, dy:  cosS }]
+      case 'rear':      return [{ x: -w / 2 + ins, y: rearY,   dx: -1,    dy:  0    }]
       default:          return []
     }
   }

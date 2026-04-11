@@ -262,10 +262,12 @@
     shadowCornerRadius: 4 — shadow rect corner radius in px (0 = square)<br />
     <br />
     <span style="color:#e9c46a">// Exhaust afterfire</span><br />
-    exhaustPosition: null &nbsp;&nbsp;— 'left' | 'right' | 'bothSides' | 'rear'<br />
-    exhaustOffset: 0.5 &nbsp;&nbsp;&nbsp;&nbsp;— 0–1 along the chosen edge<br />
-    exhaustRadius: 6 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— flash circle radius in px<br />
-    exhaustInterval: 0.9 &nbsp;&nbsp;— min seconds between flashes (actual = interval × 1–2×)<br />
+    exhaustPosition: null &nbsp;&nbsp;— 'left' | 'right' | 'bothSides' | 'rear' | null (null = disabled)<br />
+    exhaustOffset: 0.5 &nbsp;&nbsp;&nbsp;&nbsp;— 0–1 along the chosen edge (0 = front/left corner, 1 = rear/right corner)<br />
+    exhaustRadius: 6 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— base flame radius in px; scales length and width proportionally<br />
+    exhaustInterval: 0.9 &nbsp;&nbsp;— min seconds between events (actual = interval × 1–2×); 40% chance double pop, 15% triple<br />
+    exhaustAngle: 90 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— side exhausts only: 90 = perpendicular to car side, up to 170 = swept back toward tail<br />
+    exhaustInset: 0 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— px inboard from the car edge (side: toward centre; rear: tucked into bodywork)<br />
     <br />
     <span style="color:#e9c46a">// Behaviour flags</span><br />
     orbitDetection: true &nbsp;&nbsp;— detect and escape infinite-circle situations<br />
@@ -551,17 +553,22 @@
     Any car can display a sprite image instead of the default colored rectangle.
     Pass a URL string or an <code>HTMLImageElement</code> as <code>sprite</code>;
     the image is drawn with high-quality smoothing enabled so it stays crisp at
-    any rotation. The shadow and exhaust flash render on top of the sprite
-    regardless.
+    any rotation. Exhaust flames render <em>under</em> the car body so they
+    appear to emerge from behind bodywork, wings, and diffusers.
   </p>
   <p>
-    When <code>exhaustPosition</code> is set, a brief yellow circle fires at
-    the specified location every 2.2–4.4 seconds (default) while the car is moving above
-    50 px/s — a 5-frame animation at opacities [0.5, 1.0, 1.0, 0.66, 0.33].
-    The position is specified in car-local space:
-    <code>'rear'</code>, <code>'left'</code>, <code>'right'</code>, or
-    <code>'bothSides'</code>, with <code>exhaustOffset</code> controlling where
-    along that edge the flash appears.
+    When <code>exhaustPosition</code> is set, a teardrop-shaped afterfire flame
+    fires periodically while the car is moving above 50 px/s. Each event has a
+    40% chance of a double pop and a 15% chance of a triple — each pop in a burst
+    re-rolls its size and shape independently. The flame is white-hot at the base,
+    transitioning through bright yellow and deep orange to a transparent tip.
+  </p>
+  <p>
+    Use <code>exhaustAngle</code> (90–170°) to sweep side exhaust tips rearward,
+    and <code>exhaustInset</code> to tuck the emission point inboard from the car
+    edge — useful for exhausts that exit beneath a wing or body panel. Setting
+    <code>exhaustPosition: null</code> (the default) disables afterfire entirely
+    with no overhead.
   </p>
 </div>
 
@@ -595,6 +602,7 @@
     exhaustPosition: 'right',
     exhaustOffset: 0.38,
     exhaustRadius: 5,
+    exhaustAngle: 145,
   }
 
   // Audi 90 GTO #01
@@ -639,7 +647,9 @@
     slipScale: 1.5,
     exhaustPosition: 'rear',
     exhaustOffset: 0.6,
-    exhaustRadius: 4,
+    exhaustInterval: 0.7,
+    exhaustInset: 14,
+    exhaustRadius: 4.8,
     shadowCornerRadius: 1,
     sprite: 'zxt.png',
   })
