@@ -207,8 +207,20 @@ export class Car {
     const shouldBrake = realDist < brakingDist * 1.2
     const insideArrival = realDist < this.arrivalRadius
 
-    // Inside arrival radius: just brake to a stop, don't steer
+    // Inside arrival radius: brake to a stop, but keep avoidance active so
+    // cars don't blindly drive through each other while parking.
     if (insideArrival) {
+      const avoid = this._avoidanceForce(others)
+      const avoidLen = Math.sqrt(avoid.x * avoid.x + avoid.y * avoid.y)
+      if (avoidLen > 0.001) {
+        const desiredH = Math.atan2(avoid.y, avoid.x)
+        const err = angleDiff(this.heading, desiredH)
+        const targetSteering = clamp(err, -this.maxSteering, this.maxSteering)
+        this.steeringAngle += clamp(targetSteering - this.steeringAngle, -this.steeringRate * dt, this.steeringRate * dt)
+      } else {
+        // No neighbours — let the wheel straighten naturally
+        this.steeringAngle *= Math.max(0, 1 - dt * 4)
+      }
       this.speed = Math.max(0, this.speed - effectiveBrakeDecel * dt)
       this._applyBicycleModel(dt)
       if (this.speed < 10) {

@@ -114,11 +114,13 @@ export class CarDriver {
     const n = this.cars.length
     if (n === 0) return
 
-    // Scatter radius scales with car count so they have room
+    // Scatter radius scales with car count so they have room.
+    // minSeparation is 2.5× car width so targets are far enough apart that
+    // cars don't enter each other's arrival zones simultaneously.
     const carW = this.cars[0].width
     const mult = this._scatterMult ?? 1.0
-    const scatterRadius = carW * (0.66 + n * 0.33) * mult
-    const minSeparation = carW * 1.5
+    const minSeparation = carW * 2.5
+    const scatterRadius = Math.max(carW * (0.66 + n * 0.33), minSeparation * 0.9) * mult
 
     const targets = CarDriver._scatterPoints(x, y, n, scatterRadius, minSeparation)
 
