@@ -574,48 +574,62 @@
     count: 0, // add the cars manually below
     skidOpacity: 0.019
   })
-  
-  // Audi
-  driver.addCar({
-    color: 'rgb(193, 16, 16)',
+
+  // Line cars up at the top of the page, facing down, awaiting first click
+  const spacing = 90
+  const startX  = window.innerWidth / 2 - spacing
+  const startY  = 60
+  const heading = Math.PI / 2  // pointing down
+
+  // Shared Audi 90 GTO base config
+  const audiBase = {
+    y: startY, heading,
     height: 32,
-    wheelbase: 42,
+    wheelbase: 44,
     maxSteering: 20,
-    twitchiness: 0.2,
     steeringRate: 200,
     driveBias: 0.6,
-    acceleration: 190,
     tireWidth: 7,
     exhaustPosition: 'right',
     exhaustOffset: 0.38,
     exhaustRadius: 5,
-    sprite: 'a901.png'
-  })
+  }
+
+  // Audi 90 GTO #01
   driver.addCar({
+    ...audiBase,
+    x: startX,
     color: 'rgb(201, 176, 32)',
-    height: 32,
-    wheelbase: 42,
-    maxSteering: 20,
-    twitchiness: 0.1,
-    steeringRate: 200,
-    driveBias: 0.6,
-    acceleration: 200,
-    tireWidth: 7,
-    exhaustPosition: 'right',
-    exhaustOffset: 0.38,
-    exhaustRadius: 5,
-    sprite: 'a9037.png'
+    twitchiness: 0.2,
+    acceleration: 190,
+    brakes: 0.5,
+    sprite: 'a901.png',
   })
 
-  // Nissan
+  // Audi 90 GTO #37
   driver.addCar({
+    ...audiBase,
+    x: startX + spacing,
+    color: 'rgb(214, 214, 214)',
+    twitchiness: 0.1,
+    acceleration: 200,
+    brakes: 0.7,
+    sprite: 'a9037.png',
+  })
+
+  // Nissan GTP ZX-T
+  driver.addCar({
+    x: startX + spacing * 2,
+    y: startY,
+    heading,
     color: '#0000ff',
     height: 32,
     wheelbase: 48,
     maxSpeed: 550,
     acceleration: 100,
     maxSteering: 22,
-    twitchiness: 0.3,
+    twitchiness: 0.6,
+    brakes: 0.76,
     steeringRate: 200,
     driveBias: 1,
     tireWidth: 6,
@@ -623,7 +637,8 @@
     exhaustPosition: 'rear',
     exhaustOffset: 0.6,
     exhaustRadius: 4,
-    sprite: 'zxt.png'
+    shadowCornerRadius: 1,
+    sprite: 'zxt.png',
   })
   
 
@@ -632,7 +647,7 @@
 
   const controlsPanel = document.getElementById('controls')
 
-  // Ctrl+Ctrl+Shift+Space toggles debug overlay + controls panel
+  // Ctrl+Shift+Space toggles debug overlay + controls panel
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && e.code === 'Space') {
       e.preventDefault()
