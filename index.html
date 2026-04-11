@@ -577,10 +577,11 @@
   })
 
   // Line cars up at the top of the page, facing down, awaiting first click
-  const spacing = 90
-  const startX  = window.innerWidth / 2 - spacing
-  const startY  = 60
-  const heading = Math.PI / 2  // pointing down
+  const spacing   = 90
+  const startX    = window.innerWidth / 2 - spacing
+  const carLength = 44 * 1.5          // Audi body length (wheelbase × 1.5)
+  const startY    = carLength * 0.1   // ≈ 7px — front 60% visible, tail disappears off top
+  const heading   = Math.PI * 0.75    // pointing down-left (45° toward turn 1)
 
   // Shared Audi 90 GTO base config
   const audiBase = {
