@@ -470,6 +470,46 @@ export class Car {
     return { x: fx, y: fy }
   }
 
+  /**
+   * Renders a solid black silhouette of the car body.
+   * Used by CarDriver's shadow pre-pass: all silhouettes are collected on an
+   * offscreen canvas and blurred in a single GPU operation each frame.
+   * @param {CanvasRenderingContext2D} ctx
+   */
+  renderSilhouette(ctx) {
+    const w = this.width
+    const h = this.height
+    const r = 5
+
+    const axleOffset = w * 0.28
+    const frontX = this.x + Math.cos(this.heading) * axleOffset
+    const frontY = this.y + Math.sin(this.heading) * axleOffset
+    const visualHeading = this.heading - this._slipAngle
+    const bodyX = frontX - Math.cos(visualHeading) * axleOffset
+    const bodyY = frontY - Math.sin(visualHeading) * axleOffset
+
+    ctx.save()
+    ctx.translate(bodyX, bodyY)
+    ctx.rotate(visualHeading)
+
+    if (this.sprite && this.sprite.complete && this.sprite.naturalWidth > 0) {
+      // Draw sprite to stamp its alpha onto the shadow canvas, then flood-fill
+      // the opaque pixels black so the blur produces a dark shadow (not a coloured one).
+      ctx.drawImage(this.sprite, -w / 2, -h / 2, w, h)
+      ctx.globalCompositeOperation = 'source-atop'
+      ctx.fillStyle = 'black'
+      ctx.fillRect(-w / 2, -h / 2, w, h)
+      // globalCompositeOperation is restored by ctx.restore() below
+    } else {
+      ctx.beginPath()
+      ctx.roundRect(-w / 2, -h / 2, w, h, r)
+      ctx.fillStyle = 'black'
+      ctx.fill()
+    }
+
+    ctx.restore()
+  }
+
   /** @param {CanvasRenderingContext2D} ctx @param {{ shadow?: boolean, shadowOpacity?: number, shadowBlur?: number, shadowOffsetX?: number, shadowOffsetY?: number, shadowCornerRadius?: number }} renderOpts */
   render(ctx, renderOpts = {}) {
     const w = this.width
@@ -541,13 +581,8 @@ export class Car {
     }
 
     // Body — sprite if loaded, otherwise rectangle
-    // Shadow applied directly to body draw — GPU-accelerated, no separate pass needed
-    if (renderOpts.shadow !== false) {
-      ctx.shadowBlur    = renderOpts.shadowBlur    ?? 4.5
-      ctx.shadowColor   = `rgba(0,0,0,${renderOpts.shadowOpacity ?? 0.40})`
-      ctx.shadowOffsetX = renderOpts.shadowOffsetX ?? 4
-      ctx.shadowOffsetY = renderOpts.shadowOffsetY ?? 6
-    }
+    // Shadow is handled externally by CarDriver's pre-pass (renderSilhouette + blur blit),
+    // so no per-car shadowBlur settings are needed here.
     if (this.sprite && this.sprite.complete && this.sprite.naturalWidth > 0) {
       ctx.imageSmoothingEnabled = true
       ctx.imageSmoothingQuality = 'high'
@@ -558,8 +593,7 @@ export class Car {
       ctx.fillStyle = this.color
       ctx.fill()
 
-      // Windshield stripe (front third, slightly darker) — reset shadow first
-      ctx.shadowBlur = 0
+      // Windshield stripe (front third, slightly darker)
       ctx.beginPath()
       ctx.roundRect(w / 2 - w / 3, -h / 2 + 3, w / 3 - 3, h - 6, 2)
       ctx.fillStyle = 'rgba(0,0,0,0.25)'

@@ -83,6 +83,12 @@ export class CarDriver {
     document.body.appendChild(this._canvas)
     this._ctx = this._canvas.getContext('2d')
 
+    // Off-screen canvas for the shadow pre-pass — silhouettes are drawn here once
+    // per frame, then blitted to the main canvas with a single blur filter operation.
+    // This keeps GPU shadow cost O(1) w.r.t. car count regardless of fleet size.
+    this._shadowCanvas = document.createElement('canvas')
+    this._shadowCtx = this._shadowCanvas.getContext('2d')
+
     this._resize()
     this._onResize = this._resize.bind(this)
     window.addEventListener('resize', this._onResize)
@@ -528,6 +534,8 @@ export class CarDriver {
     this._canvas.height = this.fixedCanvas ? window.innerHeight : sh
     this._skidCanvas.width  = sw
     this._skidCanvas.height = sh
+    this._shadowCanvas.width  = window.innerWidth
+    this._shadowCanvas.height = window.innerHeight
     // Replay stored segments back onto the freshly-cleared skid canvas
     for (const s of this._skidmarks) this._drawSkidSegment(s)
   }
@@ -586,13 +594,40 @@ export class CarDriver {
     // Absolute: canvas is already in page coords, no translate needed
     if (this.fixedCanvas) ctx.save(), ctx.translate(-sx, -sy)
 
-    const renderOpts = { shadow: this.shadow, shadowOpacity: this.shadowOpacity, shadowBlur: this.shadowBlur, shadowOffsetX: this.shadowOffsetX, shadowOffsetY: this.shadowOffsetY }
+    // Shadow pre-pass: draw all silhouettes to an offscreen canvas (viewport-sized,
+    // in viewport coordinates), then blit the whole layer once with blur. This is one
+    // GPU blur operation instead of one per car — O(1) GPU cost regardless of fleet size.
+    if (this.shadow) {
+      const sc = this._shadowCtx
+      sc.clearRect(0, 0, vw, vh)
+      sc.save()
+      sc.translate(-sx, -sy)  // page → viewport coords
+      for (const car of this.cars) {
+        const vx = car.x - sx
+        const vy = car.y - sy
+        if (vx < -car.width || vx > vw + car.width || vy < -car.height || vy > vh + car.height) continue
+        car.renderSilhouette(sc)
+      }
+      sc.restore()
+
+      // Blit the blurred shadow layer. After fixedCanvas translate, (sx + offsetX, sy + offsetY)
+      // maps to canvas-coord (offsetX, offsetY); in absolute mode it maps to page-coord
+      // (sx + offsetX, sy + offsetY) which is exactly where the viewport top-left lives.
+      ctx.save()
+      ctx.filter = `blur(${this.shadowBlur}px)`
+      ctx.globalAlpha = this.shadowOpacity
+      ctx.drawImage(this._shadowCanvas, sx + this.shadowOffsetX, sy + this.shadowOffsetY)
+      ctx.globalAlpha = 1
+      ctx.filter = 'none'
+      ctx.restore()
+    }
+
     for (const car of this.cars) {
       // Skip cars fully outside the viewport
       const vx = car.x - sx
       const vy = car.y - sy
       if (vx < -car.width || vx > vw + car.width || vy < -car.height || vy > vh + car.height) continue
-      car.render(ctx, renderOpts)
+      car.render(ctx, { shadow: false })
     }
 
     if (this.debug) this._renderDebug(ctx)
