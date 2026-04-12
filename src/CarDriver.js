@@ -549,12 +549,20 @@ export class CarDriver {
     const sy = window.scrollY
     const vw = window.innerWidth
     const vh = window.innerHeight
-    // Fixed: clear viewport-sized canvas from origin
-    // Absolute: clear only the visible viewport slice of the full-document canvas
+    // Fixed: clear viewport-sized canvas from origin.
+    // Absolute: clear viewport + a padding that covers (a) the car rendering overhang
+    // (cars are drawn up to car.width outside the viewport due to culling threshold) and
+    // (b) shadow bleed from the blur blit extending past the shadow canvas edge.
+    // Chrome scrolls on the compositor thread before the main thread can RAF-clear,
+    // so without this pad, stale content just outside the viewport is briefly visible.
     if (this.fixedCanvas) {
       ctx.clearRect(0, 0, vw, vh)
     } else {
-      ctx.clearRect(sx, sy, vw, vh)
+      const maxCarWidth = this.cars.reduce((m, c) => Math.max(m, c.width), 0)
+      const pad = Math.ceil(this.shadowBlur * 3)
+                + Math.max(this.shadowOffsetX, this.shadowOffsetY, 0)
+                + maxCarWidth  // covers rendering overhang from viewport culling threshold
+      ctx.clearRect(sx - pad, sy - pad, vw + pad * 2, vh + pad * 2)
     }
 
     for (const car of this.cars) {
