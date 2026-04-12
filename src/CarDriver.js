@@ -19,6 +19,7 @@ export class CarDriver {
     } = opts
 
     this.cars = []
+    this.fixedCanvas = opts.fixedCanvas ?? false
     this.debug = opts.debug ?? false
     this.driverChange = opts.driverChange ?? true
     this.skidOpacity = opts.skidOpacity ?? 0.33
@@ -70,9 +71,11 @@ export class CarDriver {
     this._skidCtx = this._skidCanvas.getContext('2d')
 
     // Main canvas (cars + debug overlay)
+    // fixedCanvas=true: viewport-sized, cheaper clear, but disconnects from rubber-band overscroll
+    // fixedCanvas=false (default): full document size, follows page naturally
     this._canvas = document.createElement('canvas')
     const s = this._canvas.style
-    s.position = 'absolute'
+    s.position = this.fixedCanvas ? 'fixed' : 'absolute'
     s.top = '0'
     s.left = '0'
     s.pointerEvents = 'none'
@@ -517,12 +520,14 @@ export class CarDriver {
 
   _resize() {
     const docEl = document.documentElement
-    const w = Math.max(docEl.scrollWidth, window.innerWidth)
-    const h = Math.max(docEl.scrollHeight, window.innerHeight)
-    this._canvas.width = w
-    this._canvas.height = h
-    this._skidCanvas.width = w
-    this._skidCanvas.height = h
+    const sw = Math.max(docEl.scrollWidth, window.innerWidth)
+    const sh = Math.max(docEl.scrollHeight, window.innerHeight)
+    // Fixed mode: main canvas is viewport-sized (cheaper clear, no rubber-band follow)
+    // Absolute mode: main canvas matches full document (follows page naturally)
+    this._canvas.width  = this.fixedCanvas ? window.innerWidth  : sw
+    this._canvas.height = this.fixedCanvas ? window.innerHeight : sh
+    this._skidCanvas.width  = sw
+    this._skidCanvas.height = sh
     // Replay stored segments back onto the freshly-cleared skid canvas
     for (const s of this._skidmarks) this._drawSkidSegment(s)
   }
@@ -532,7 +537,17 @@ export class CarDriver {
     this._lastTime = timestamp
 
     const ctx = this._ctx
-    ctx.clearRect(0, 0, this._canvas.width, this._canvas.height)
+    const sx = window.scrollX
+    const sy = window.scrollY
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    // Fixed: clear viewport-sized canvas from origin
+    // Absolute: clear only the visible viewport slice of the full-document canvas
+    if (this.fixedCanvas) {
+      ctx.clearRect(0, 0, vw, vh)
+    } else {
+      ctx.clearRect(sx, sy, vw, vh)
+    }
 
     for (const car of this.cars) {
       car.orbitDetection = this.orbitDetection
@@ -567,11 +582,22 @@ export class CarDriver {
       if (!this.cars.includes(car)) this._clearTurnState(car)
     }
 
+    // Fixed: translate page coords → viewport coords
+    // Absolute: canvas is already in page coords, no translate needed
+    if (this.fixedCanvas) ctx.save(), ctx.translate(-sx, -sy)
+
+    const renderOpts = { shadow: this.shadow, shadowOpacity: this.shadowOpacity, shadowBlur: this.shadowBlur, shadowOffsetX: this.shadowOffsetX, shadowOffsetY: this.shadowOffsetY }
     for (const car of this.cars) {
-      car.render(ctx, { shadow: this.shadow, shadowOpacity: this.shadowOpacity, shadowBlur: this.shadowBlur, shadowOffsetX: this.shadowOffsetX, shadowOffsetY: this.shadowOffsetY })
+      // Skip cars fully outside the viewport
+      const vx = car.x - sx
+      const vy = car.y - sy
+      if (vx < -car.width || vx > vw + car.width || vy < -car.height || vy > vh + car.height) continue
+      car.render(ctx, renderOpts)
     }
 
     if (this.debug) this._renderDebug(ctx)
+
+    if (this.fixedCanvas) ctx.restore()
 
     this._rafId = requestAnimationFrame(this._loop.bind(this))
   }

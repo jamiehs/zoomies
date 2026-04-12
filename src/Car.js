@@ -485,30 +485,6 @@ export class Car {
     const bodyX = frontX - Math.cos(visualHeading) * axleOffset
     const bodyY = frontY - Math.sin(visualHeading) * axleOffset
 
-    // Ground shadow — drawn in a separate transform so the offset is in
-    // page-space (world-space), not car-local space. Zero offset = centered.
-    if (renderOpts.shadow !== false) {
-      const opacity = renderOpts.shadowOpacity ?? 0.40
-      const blur    = renderOpts.shadowBlur    ?? 4
-      const ox      = renderOpts.shadowOffsetX ?? 0
-      const oy      = renderOpts.shadowOffsetY ?? 0
-      ctx.save()
-      ctx.translate(bodyX + ox, bodyY + oy)
-      ctx.rotate(visualHeading)
-      ctx.filter = `blur(${blur}px)`
-      ctx.fillStyle = `rgba(0,0,0,${opacity})`
-      const sr = this.shadowCornerRadius
-      if (sr > 0) {
-        ctx.beginPath()
-        ctx.roundRect(-w / 2, -h / 2, w, h, sr)
-        ctx.fill()
-      } else {
-        ctx.fillRect(-w / 2, -h / 2, w, h)
-      }
-      ctx.filter = 'none'
-      ctx.restore()
-    }
-
     ctx.save()
     ctx.translate(bodyX, bodyY)
     ctx.rotate(visualHeading)
@@ -565,6 +541,13 @@ export class Car {
     }
 
     // Body — sprite if loaded, otherwise rectangle
+    // Shadow applied directly to body draw — GPU-accelerated, no separate pass needed
+    if (renderOpts.shadow !== false) {
+      ctx.shadowBlur    = renderOpts.shadowBlur    ?? 4.5
+      ctx.shadowColor   = `rgba(0,0,0,${renderOpts.shadowOpacity ?? 0.40})`
+      ctx.shadowOffsetX = renderOpts.shadowOffsetX ?? 4
+      ctx.shadowOffsetY = renderOpts.shadowOffsetY ?? 6
+    }
     if (this.sprite && this.sprite.complete && this.sprite.naturalWidth > 0) {
       ctx.imageSmoothingEnabled = true
       ctx.imageSmoothingQuality = 'high'
@@ -575,7 +558,8 @@ export class Car {
       ctx.fillStyle = this.color
       ctx.fill()
 
-      // Windshield stripe (front third, slightly darker)
+      // Windshield stripe (front third, slightly darker) — reset shadow first
+      ctx.shadowBlur = 0
       ctx.beginPath()
       ctx.roundRect(w / 2 - w / 3, -h / 2 + 3, w / 3 - 3, h - 6, 2)
       ctx.fillStyle = 'rgba(0,0,0,0.25)'
