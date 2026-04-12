@@ -525,14 +525,14 @@ export class CarDriver {
   }
 
   _resize() {
-    const docEl = document.documentElement
-    const sw = Math.max(docEl.scrollWidth, window.innerWidth)
-    const sh = Math.max(docEl.scrollHeight, window.innerHeight)
-    // Fixed mode: main canvas is viewport-sized (cheaper clear, no rubber-band follow)
-    // Absolute mode: main canvas matches full document (follows page naturally)
-    this._canvas.width  = this.fixedCanvas ? window.innerWidth  : sw
+    const sh = Math.max(document.documentElement.scrollHeight, window.innerHeight)
+    // Canvas width is always the viewport width — cars never need to be drawn beyond
+    // horizontal viewport bounds, and using scrollWidth here creates a feedback loop
+    // on orientation change: the landscape-sized canvas inflates scrollWidth, which
+    // then prevents the canvas from shrinking when returning to portrait.
+    this._canvas.width  = window.innerWidth
     this._canvas.height = this.fixedCanvas ? window.innerHeight : sh
-    this._skidCanvas.width  = sw
+    this._skidCanvas.width  = window.innerWidth
     this._skidCanvas.height = sh
     this._shadowCanvas.width  = window.innerWidth
     this._shadowCanvas.height = window.innerHeight
@@ -621,11 +621,10 @@ export class CarDriver {
       // maps to canvas-coord (offsetX, offsetY); in absolute mode it maps to page-coord
       // (sx + offsetX, sy + offsetY) which is exactly where the viewport top-left lives.
       ctx.save()
-      ctx.filter = `blur(${this.shadowBlur}px)`
+      if (this.shadowBlur > 0) ctx.filter = `blur(${this.shadowBlur}px)`
       ctx.globalAlpha = this.shadowOpacity
       ctx.drawImage(this._shadowCanvas, sx + this.shadowOffsetX, sy + this.shadowOffsetY)
       ctx.globalAlpha = 1
-      ctx.filter = 'none'
       ctx.restore()
     }
 
