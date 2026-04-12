@@ -2,6 +2,20 @@ import { Car } from './Car.js'
 
 const DEFAULT_COLORS = ['#e63946', '#457b9d', '#2a9d8f', '#e9c46a', '#f4a261']
 
+/**
+ * Returns an appropriate shadow blur radius for the current device.
+ * The caller provides their desired full-quality value; detection decides whether
+ * to honour it or return 0. Low-power devices always get 0 — the shadow is still
+ * rendered as a sharp offset, but the expensive full-viewport GPU blur is skipped.
+ */
+function detectShadowBlur(full = 4.5) {
+  const mem = (navigator).deviceMemory  // undefined in Firefox/Safari
+  const cores = navigator.hardwareConcurrency ?? 4
+  const isLowPower = (mem !== undefined && mem <= 1)
+                  || (cores <= 4 && navigator.maxTouchPoints > 0)
+  return isLowPower ? 0 : full
+}
+
 export class CarDriver {
   /**
    * @param {object} opts
@@ -25,7 +39,7 @@ export class CarDriver {
     this.skidOpacity = opts.skidOpacity ?? 0.33
     this.shadow = opts.shadow ?? true
     this.shadowOpacity = opts.shadowOpacity ?? 0.40
-    this.shadowBlur = opts.shadowBlur ?? 4.5
+    this.shadowBlur = detectShadowBlur(opts.shadowBlur ?? 4.5)
     this.shadowOffsetX = opts.shadowOffsetX ?? 4
     this.shadowOffsetY = opts.shadowOffsetY ?? 6
     this.orbitDetection = opts.orbitDetection ?? true
