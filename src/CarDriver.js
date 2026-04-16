@@ -122,11 +122,18 @@ export class CarDriver {
             car.target = null
             car.path = null
           }
+          // Prevent the click-to-drive handler from also routing the fleet
+          // to the car's position on the same event.
+          e.stopImmediatePropagation()
           return
         }
       }
-      // Click on empty space — release player car
-      this._releasePlayerCar()
+      // Click on empty space — release player car.
+      // Stop propagation so releasing control doesn't simultaneously reroute the fleet.
+      if (this._playerCar) {
+        this._releasePlayerCar()
+        e.stopImmediatePropagation()
+      }
     }
     if (this.driverChange) document.addEventListener('click', this._onDriverChangeClick)
 
@@ -232,6 +239,7 @@ export class CarDriver {
 
   /** Remove a car instance. */
   removeCar(car) {
+    if (this._playerCar === car) this._releasePlayerCar()
     const idx = this.cars.indexOf(car)
     if (idx !== -1) this.cars.splice(idx, 1)
   }
@@ -961,9 +969,21 @@ export class CarDriver {
         }
       }
       if (!placed) {
-        const angle = Math.random() * Math.PI * 2
-        const r = Math.random() * radius
-        points.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r })
+        // Rejection sampler gave up — place at max radius, choosing the angle
+        // that maximizes the minimum distance to already-placed points so the
+        // spacing violation is as small as possible.
+        let bestAngle = Math.random() * Math.PI * 2
+        let bestMinDist = -1
+        const candidates = 16
+        for (let c = 0; c < candidates; c++) {
+          const angle = (c / candidates) * Math.PI * 2
+          const px = cx + Math.cos(angle) * radius
+          const py = cy + Math.sin(angle) * radius
+          let minDist = Infinity
+          for (const p of points) minDist = Math.min(minDist, Math.hypot(px - p.x, py - p.y))
+          if (minDist > bestMinDist) { bestMinDist = minDist; bestAngle = angle }
+        }
+        points.push({ x: cx + Math.cos(bestAngle) * radius, y: cy + Math.sin(bestAngle) * radius })
       }
     }
     return points

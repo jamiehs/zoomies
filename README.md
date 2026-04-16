@@ -39,10 +39,10 @@ Or drop the IIFE build straight into a `<script>` tag:
 ```js
 new CarDriver({
   // Fleet
-  count: 3,               // cars spawned on init (default 3)
+  count: 1,               // cars spawned on init (default 1)
 
   // Rendering
-  zIndex: 9999,           // canvas z-index
+  zIndex: -1,             // canvas z-index
 
   // Skidmarks
   skidOpacity: 0.08,      // per-segment opacity multiplier (0–1); 1 = raw baked alpha
@@ -185,7 +185,7 @@ Target speed is scaled by how well the car faces the target:
 v_eff = v_max · clamp(floor + (1 − floor) · cos(θ_err), floor, 1)
 ```
 
-The floor is 0.3 normally, rising to 0.7 during an active collision so a bumped car isn't artificially slowed.
+The floor is 0.6 normally, rising to 0.7 during an active collision so a bumped car isn't artificially slowed.
 
 ### Speed & braking
 
@@ -198,7 +198,7 @@ brakingDist         = v² / (2 × effectiveBrakeDecel)
 skidding            = speed > skidThreshold × grip
 ```
 
-- **`maxSpeed`** — the per-car ceiling, with ±20% random variation applied at construction. The car never actually reaches this in a straight line because alignment scaling reduces target speed proportionally to heading error (floor 0.3, so even a sideways car keeps 30% to aid turning). Proximity boost can push a lead car briefly above it.
+- **`maxSpeed`** — the per-car ceiling, with ±20% random variation applied at construction. The car never actually reaches this in a straight line because alignment scaling reduces target speed proportionally to heading error (floor 0.6, so even a sideways car keeps 60% target speed to aid turning). Proximity boost can push a lead car briefly above it.
 - **`acceleration`** — a constant px/s² ramp. There is no traction limit on acceleration; it runs at the same rate regardless of speed or steering angle.
 - **`brakes`** — maps 0–1 onto a deceleration range: `0` ≈ 60 px/s² (barely slows), `0.5` ≈ 480 px/s² (default), `1` ≈ 900 px/s² (near-instant). Use raw `brakeDecel` (px/s²) for precise control.
 - **`grip`** — a single 0–1 knob that touches four values simultaneously: effective braking force (`brakeDecel × (0.3 + 0.7 × grip)`), skid trigger threshold (`skidThreshold × grip`), rear slip spring stiffness (`slipStiffness × grip`), and skidmark fan width (`slipScale / grip`). Lowering grip makes the car skid sooner, oversteer more, leave wider marks, and stop in a longer distance.

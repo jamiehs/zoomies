@@ -240,6 +240,87 @@ describe('driveTo', () => {
   })
 })
 
+// ---------- driverChange click isolation ----------
+
+describe('driverChange click isolation', () => {
+  function makeFakeEvent(pageX, pageY) {
+    const calls = { stopPropagation: false, stopImmediatePropagation: false }
+    return {
+      pageX, pageY,
+      stopPropagation()          { calls.stopPropagation = true },
+      stopImmediatePropagation() { calls.stopImmediatePropagation = true },
+      preventDefault()           {},
+      _calls: calls,
+    }
+  }
+
+  it('clicking a car calls stopImmediatePropagation to block sibling listeners on document', () => {
+    const driver = makeDriver({ count: 1 })
+    const car = driver.cars[0]
+    car.x = 200
+    car.y = 200
+
+    const e = makeFakeEvent(car.x, car.y)
+    driver._onDriverChangeClick(e)
+
+    expect(e._calls.stopImmediatePropagation).toBe(true)
+  })
+
+  it('clicking empty space while holding a player car calls stopImmediatePropagation', () => {
+    const driver = makeDriver({ count: 1 })
+    const car = driver.cars[0]
+    driver._playerCar = car
+    car._playerControlled = true
+
+    const e = makeFakeEvent(999, 999)
+    driver._onDriverChangeClick(e)
+
+    expect(e._calls.stopImmediatePropagation).toBe(true)
+    expect(driver._playerCar).toBeNull()
+  })
+
+  it('clicking empty space with no player car does not stop propagation', () => {
+    const driver = makeDriver({ count: 1 })
+    // No player car
+
+    const e = makeFakeEvent(999, 999)
+    driver._onDriverChangeClick(e)
+
+    expect(e._calls.stopImmediatePropagation).toBe(false)
+    expect(e._calls.stopPropagation).toBe(false)
+  })
+})
+
+// ---------- removeCar player cleanup ----------
+
+describe('removeCar player cleanup', () => {
+  it('clears _playerCar when the controlled car is removed', () => {
+    const driver = makeDriver({ count: 0 })
+    const car = driver.addCar({ x: 100, y: 100 })
+    driver._playerCar = car
+    car._playerControlled = true
+
+    driver.removeCar(car)
+
+    expect(driver._playerCar).toBeNull()
+    expect(car._playerControlled).toBe(false)
+    expect(driver.cars).not.toContain(car)
+  })
+
+  it('does not clear _playerCar when a different car is removed', () => {
+    const driver = makeDriver({ count: 0 })
+    const player = driver.addCar({ x: 100, y: 100 })
+    const other  = driver.addCar({ x: 200, y: 200 })
+    driver._playerCar = player
+    player._playerControlled = true
+
+    driver.removeCar(other)
+
+    expect(driver._playerCar).toBe(player)
+    expect(player._playerControlled).toBe(true)
+  })
+})
+
 // ---------- _emitSkidmarks ----------
 
 describe('_emitSkidmarks', () => {
